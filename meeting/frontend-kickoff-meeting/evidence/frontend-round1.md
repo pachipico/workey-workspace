@@ -1,165 +1,463 @@
-# Frontend Round 1 - 킥오프 미팅 분석
+# [R1-FRONTEND] React Native 앱 구조 설계 — Round 1
 
-> 작성일: 2026-04-28  
-> 작성자: frontend-agent  
-> 상태: 소스 파일 읽기 권한 거부로 인해 태스크 설명 기반 분석
-
----
-
-## 0. 분석 제약 사항
-
-`docs/WorKey - 프론트엔드.md` 및 `frontend/` 내 소스 파일(App.tsx, package.json 등)에 대한 읽기 접근이 차단되었습니다.  
-현재 분석은 태스크 명세(`create-react-native-app` 초기화 상태)와 일반적인 RN 프로젝트 구조를 기반으로 작성되었으며, **파일 접근 권한 복구 후 반드시 재검토가 필요합니다.**
+> **작성자**: frontend-agent  
+> **일시**: 2026-04-29  
+> **참조**: `docs/WorKey - 프론트엔드.md`, `docs/WorKey - 기획서.md`, `docs/WorKey - 디자인.md`, `docs/WorKey - 백엔드.md`
 
 ---
 
-## 1. React Navigation 구조 설계
+## 0. 요약
 
-### 현황 가정
-- `create-react-native-app` 기본 세팅 → React Navigation 미설치 또는 기본 스택만 존재
-- 인증/비인증 분기가 없는 단순 구조일 가능성 높음
-
-### 제안 네비게이션 아키텍처
-
-```
-RootNavigator
-├── AuthStack (비인증 상태)
-│   ├── LoginScreen
-│   └── RegisterScreen
-└── MainTabs (인증 상태 - BottomTabNavigator)
-    ├── HomeStack
-    │   ├── HomeScreen
-    │   └── JobDetailScreen
-    ├── SearchStack
-    │   └── SearchScreen
-    ├── ApplyStack
-    │   ├── ApplicationListScreen
-    │   └── ApplicationDetailScreen
-    └── ProfileStack
-        └── ProfileScreen
-```
-
-### 필요 패키지
-- `@react-navigation/native` (core)
-- `@react-navigation/native-stack` (iOS/Android 네이티브 스택)
-- `@react-navigation/bottom-tabs` (메인 탭)
-- `react-native-screens` + `react-native-safe-area-context` (필수 peer deps)
-
-### 주요 고려사항
-- **딥링크(Deep Link)**: 채용 공고 공유 시 앱 직접 진입 지원 필요 → `linking` 설정 필수
-- **인증 상태 연동**: Navigation State는 Auth 토큰 유무로 분기 (Context or Zustand)
-- **헤더 커스터마이징**: 각 Stack별 `screenOptions`로 플랫폼 통일된 헤더 적용
+WorKey 모바일 앱은 **관리자 / 직원** 두 역할이 동일 앱 안에서 분기되는 구조다.  
+백엔드 v1.1이 완료된 상태에서 화면(프론트엔드)만 남아있으므로, 이번 라운드에서는 **React Navigation 구조 / 상태 관리 / 네이티브 연동 / 디자인 이식 / 오프라인 대응** 5개 축을 중심으로 구현 전략을 제시한다.
 
 ---
 
-## 2. 상태 관리 전략
+## 1. 핵심 토픽 1 — 모바일 최적화 API 전략
 
-### 권장 구조: Zustand + React Query (TanStack Query)
+### 1-1. 초기 로딩 최소화 — 온보딩 상태 단일 엔드포인트
 
-| 관심사 | 도구 | 이유 |
-|--------|------|------|
-| 서버 데이터 (채용공고, 지원현황 등) | React Query | 캐싱, 백그라운드 리페치, 페이지네이션 |
-| 클라이언트 상태 (인증, UI 상태) | Zustand | 가벼운 번들, 보일러플레이트 최소화 |
-| 폼 상태 | React Hook Form | 유효성 검증, 비제어 컴포넌트 |
+앱 최초 진입 시 `GET /me/onboarding-status` **한 번의 호출**로 케이스 1~5를 분기한다.  
+이 응답값(`STORE_MISSING | INVITE_PENDING | STORE_CONFLICT | COMPLETE`)을 Zustand 전역 스토어에 캐싱해 Navigation 라우터가 읽도록 구성한다.
 
-### 인증 상태 흐름
-```
-App 시작
-  → AsyncStorage에서 토큰 로드
-  → useAuthStore.setToken()
-  → RootNavigator가 isAuthenticated 구독 → AuthStack / MainTabs 분기
+```ts
+// store/authStore.ts
+import { create } from 'zustand';
+
+type OnboardingStatus =
+  | 'STORE_MISSING'
+  | 'INVITE_PENDING'
+  | 'STORE_CONFLICT'
+  | 'COMPLETE';
+
+interface AuthState {
+  status: OnboardingStatus | null;
+  role: 'ADMIN' | 'EMPLOYEE' | null;
+  setStatus: (s: OnboardingStatus) => void;
+}
+
+export const useAuthStore = create<AuthState>((set) => ({
+  status: null,
+  role: null,
+  setStatus: (status) => set({ status }),
+}));
 ```
 
-### 오프라인 대응
-- React Query `staleTime` / `cacheTime` 적극 활용
-- 중요 데이터(지원 현황 등)는 `@react-native-async-storage/async-storage` 로컬 캐시 병행
-- 네트워크 상태 감지: `@react-native-community/netinfo` → 오프라인 토스트 표시
+### 1-2. 대시보드 합산 API 요청 — 백엔드에 요구 사항 전달 예정
+
+현재 관리자 대시보드는 다음 API를 개별 호출한다.
+
+| 화면 요소 | 현재 API |
+|---|---|
+| 이번 달 스케줄 요약 | `GET /stores/{id}/schedules/{year}/{month}` |
+| 직원 목록 | `GET /stores/{id}/employees` |
+| StoreHoliday | `GET /stores/{id}/closed-days` |
+
+> **backend-agent에 요청 예정**: 대시보드 초기 진입 시 세 API를 하나로 묶은 `GET /stores/{id}/dashboard-summary` (또는 `?include=schedule,employees,holidays` 쿼리 파라미터) 방식을 검토해달라. 모바일 네트워크 비용 절감 목적.
+
+### 1-3. TanStack Query 캐시 전략
+
+```ts
+// 직원 목록: 5분 캐시, 백그라운드 자동 갱신
+useQuery({
+  queryKey: ['employees', storeId],
+  queryFn: () => api.getEmployees(storeId),
+  staleTime: 5 * 60 * 1000,
+  gcTime: 10 * 60 * 1000,
+});
+
+// 스케줄: 생성/수정 뮤테이션 후 즉시 무효화
+useMutation({
+  mutationFn: api.generateSchedule,
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['schedule'] }),
+});
+```
 
 ---
 
-## 3. 네이티브 모듈 검토
+## 2. 핵심 토픽 2 — 네이티브 연동 전략
 
-### 필수 네이티브 모듈 후보
+### 2-1. React Navigation 구조 (Stack / Tab / Modal)
 
-| 기능 | 라이브러리 | 비고 |
-|------|-----------|------|
-| 알림 | `@notifee/react-native` 또는 `react-native-push-notification` | 채용 지원 결과 알림 |
-| 이미지 업로드 | `react-native-image-picker` | 프로필/포트폴리오 사진 |
-| 생체 인증 | `react-native-biometrics` | 간편 로그인 |
-| 링크 열기 | `react-native-linking` (내장) | 채용 공고 외부 링크 |
-| 키보드 처리 | `react-native-keyboard-aware-scroll-view` | 폼 화면 UX |
+```
+RootNavigator (Stack)
+├── SplashScreen          ← MMKV 토큰 확인 → 분기
+├── AuthStack (Stack)
+│   ├── KakaoLoginScreen
+│   └── OnboardingStack (Stack)
+│       ├── RoleSelectScreen          (케이스 1·2 진입점)
+│       ├── StoreRegisterScreen       (케이스 1)
+│       ├── LinkCheckScreen           (케이스 2)
+│       ├── WelcomeScreen             (케이스 3)
+│       ├── StoreSwitchScreen         (케이스 5)
+│       └── DismissedScreen           (케이스 4)
+└── MainStack (Stack)
+    ├── AdminTabs (BottomTabNavigator)
+    │   ├── DashboardScreen
+    │   ├── EmployeeScreen
+    │   ├── ScheduleScreen
+    │   └── SettingsScreen
+    ├── EmployeeTabs (BottomTabNavigator)
+    │   ├── MyScheduleScreen
+    │   ├── LeaveRequestScreen
+    │   └── ShiftSwapScreen
+    └── Modal Group (presentation: 'modal')
+        ├── EmployeeDetailModal
+        ├── InviteBottomSheet        ← gorhom/bottom-sheet
+        ├── LeaveRequestSheet
+        ├── DayOffConflictSheet      ← 휴무 수집 뷰 충돌 바텀시트
+        └── ExportModal
+```
 
-### 플랫폼 주의사항
-- iOS: `Podfile` 업데이트 + `pod install` 필요 (CI에서 자동화 필수)
-- Android: `gradle` 설정 충돌 위험 → `react-native-builder-bob` 기반 라이브러리 우선 선택
+**분기 로직 (SplashScreen)**
+
+```ts
+// screens/SplashScreen.tsx
+const SplashScreen = () => {
+  const token = useMMKVString('accessToken');
+  const navigation = useNavigation<RootNavigationProp>();
+
+  useEffect(() => {
+    (async () => {
+      if (!token) {
+        navigation.replace('AuthStack');
+        return;
+      }
+      const { status, role } = await api.getOnboardingStatus();
+      useAuthStore.getState().setStatus(status);
+      if (status !== 'COMPLETE') {
+        navigation.replace('OnboardingStack', { status });
+      } else {
+        navigation.replace(role === 'ADMIN' ? 'AdminTabs' : 'EmployeeTabs');
+      }
+    })();
+  }, []);
+
+  return <ActivityIndicator />;
+};
+```
+
+### 2-2. FCM / APNs 푸시 알림 통합
+
+백엔드 `NoOpNotificationAdapter` → v1.2에서 Firebase SDK 연동 예정.  
+프론트엔드는 **지금부터 FCM 토큰 등록 흐름을 구현**해 두어야 백엔드 연동 시 추가 작업이 최소화된다.
+
+```ts
+// hooks/usePushNotification.ts
+import messaging from '@react-native-firebase/messaging';
+import { api } from '../api';
+
+export const usePushNotification = () => {
+  useEffect(() => {
+    const registerToken = async () => {
+      const authStatus = await messaging().requestPermission();
+      if (authStatus === messaging.AuthorizationStatus.AUTHORIZED) {
+        const fcmToken = await messaging().getToken();
+        await api.registerPushToken({ token: fcmToken, platform: Platform.OS });
+      }
+    };
+    registerToken();
+
+    // 포그라운드 메시지 핸들러
+    const unsubscribe = messaging().onMessage(async (remoteMessage) => {
+      // 인앱 알림 토스트 표시
+      showInAppNotification(remoteMessage.notification);
+    });
+    return unsubscribe;
+  }, []);
+};
+```
+
+**알림 종류 (v1.2 준비)**
+
+| 알림 | 트리거 | 수신자 |
+|---|---|---|
+| 쉬기 전날 알림 | 저녁 20:00 스케줄러 | 직원 |
+| 관리자 당일 근무 현황 | 오전 7:00 스케줄러 | 관리자 |
+| 휴무 재배치 결과 | 드래그&드롭 확정 시 | 직원 |
+| 근무 교환 요청/승인/거절 | 각 액션 시 | 요청자·수락자 |
+
+### 2-3. 로컬 스토리지 — AsyncStorage vs MMKV 비교
+
+| 항목 | AsyncStorage | MMKV |
+|---|---|---|
+| 성능 | 비동기 I/O, 느림 | 동기 가능, 10~100배 빠름 |
+| 암호화 | ❌ | ✅ (AES-256) |
+| RN 공식 지원 | ✅ | react-native-mmkv |
+| 주 용도 | 대용량 JSON 저장 | 토큰·설정·작은 상태 |
+
+**결정: MMKV 채택 (주 저장소)**
+
+```ts
+import { MMKV } from 'react-native-mmkv';
+export const storage = new MMKV({ id: 'workey-store', encryptionKey: 'ENV_KEY' });
+
+// 토큰 저장
+storage.set('accessToken', token);
+storage.set('refreshToken', refreshToken);
+
+// Zustand 영속화 (zustand/middleware의 persist)
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+const mmkvStorage = {
+  getItem: (name: string) => storage.getString(name) ?? null,
+  setItem: (name: string, value: string) => storage.set(name, value),
+  removeItem: (name: string) => storage.delete(name),
+};
+```
 
 ---
 
-## 4. 디자인 시스템 이식 전략
+## 3. 핵심 토픽 3 — 디자인 이식 (모바일 컴포넌트 & 디자인 토큰)
 
-### 현황 가정
-- 디자인 파일(Figma 등) 존재, RN 컴포넌트 미구현 상태
-- `design-agent`와 협의 필요
+### 3-1. BottomSheet 라이브러리 선택 — `@gorhom/bottom-sheet`
 
-### 이식 전략
+| 후보 | 장점 | 단점 |
+|---|---|---|
+| `@gorhom/bottom-sheet` v5 | Reanimated 3 기반, 성능 최상, snap points 유연 | 약간의 setup 복잡도 |
+| `react-native-bottom-sheet` (별도 패키지들) | 간단 | 성능·유지보수 열위 |
+| `@gorhom/bottom-sheet` | **채택** | — |
 
-#### 4-1. 토큰 기반 Theme 시스템
-```typescript
+**직원 초대 바텀시트 구현 예시**
+
+```tsx
+// components/InviteBottomSheet.tsx
+import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+
+const InviteBottomSheet = ({ employeeId, onClose }) => {
+  const snapPoints = useMemo(() => ['35%'], []);
+
+  return (
+    <BottomSheet
+      snapPoints={snapPoints}
+      onClose={onClose}
+      backgroundStyle={{ backgroundColor: tokens.surface }}
+      handleIndicatorStyle={{ backgroundColor: tokens.border }}
+    >
+      <BottomSheetView style={styles.container}>
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: tokens.primary }]}
+          onPress={handleKakaoShare}
+          accessibilityLabel="카카오톡으로 초대 링크 보내기"
+        >
+          <Text style={{ color: '#fff' }}>💬 카카오톡으로 보내기</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.secondaryBtn, { borderColor: tokens.primaryInk }]}
+          onPress={handleCopyLink}
+        >
+          <Text style={{ color: tokens.primaryInk }}>🔗 링크 복사</Text>
+        </TouchableOpacity>
+      </BottomSheetView>
+    </BottomSheet>
+  );
+};
+```
+
+### 3-2. 디자인 토큰 RN 매핑
+
+디자인 문서의 CSS 변수를 RN StyleSheet 상수로 1:1 매핑한다.
+
+```ts
 // theme/tokens.ts
-export const colors = {
-  primary: '#...',
-  background: '#...',
-  // ...
-} as const;
+export const tokens = {
+  // Primary (sky-500 계열)
+  primary: '#0EA5E9',        // --ts-primary
+  primaryInk: '#0369A1',     // --ts-primary-ink
+  primarySoft: '#7DD3FC',    // --ts-primary-soft
+  primary50: '#F0F9FF',      // --ts-primary-50
+  primary100: '#E0F2FE',     // --ts-primary-100 / surface
+  primaryInkDark: '#0369A1', // --ts-primary-ink-dark
+  primaryInkDeep: '#0C4A6E', // --ts-primary-ink-deep
 
-export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 } as const;
-export const typography = { /* ... */ } as const;
+  // 캘린더 전용
+  calTodayBg: '#0EA5E9',     // --ts-cal-today-bg
+  calWorkTint: '#E0F9FF',    // --ts-cal-work-tint
+  blobSky: '#7DD3FC',        // --ts-blob-sky
+
+  // 공통 시맨틱
+  surface: '#FFFFFF',
+  background: '#F0F9FF',
+  border: '#E0F2FE',
+  error: '#EF4444',          // 충돌 날짜 빨간 강조
+  warning: '#F59E0B',
+};
 ```
 
-#### 4-2. 컴포넌트 우선순위
-1. **Atom**: Button, Text, Input, Icon, Badge
-2. **Molecule**: Card (채용공고), ListItem, SearchBar
-3. **Organism**: JobPostingCard, ApplicationStatusCard, BottomSheet
+### 3-3. 터치 타겟 크기 기준 (iOS HIG / Android MD3)
 
-#### 4-3. 모바일 전용 UI 패턴
-- **BottomSheet**: `@gorhom/bottom-sheet` — 필터, 옵션 선택
-- **Modal**: RN 내장 Modal + 커스텀 애니메이션
-- **터치 타겟**: 최소 44×44pt (iOS HIG 기준) / 48×48dp (Android Material 기준)
-
-#### 4-4. design-agent에게 확인 필요한 항목
-- Figma 컴포넌트와 RN StyleSheet 간 매핑 규칙
-- 다크모드 지원 여부
-- 아이콘 세트 (SVG vs. 폰트 아이콘)
+- **최소 터치 타겟**: 44×44pt (iOS) / 48×48dp (Android) — 둘 다 충족 시 `minHeight: 48` 적용
+- 캘린더 날짜 셀: `width: 44, height: 44` 보장
+- 직원 칩 (드래그 대상): `paddingHorizontal: 12, paddingVertical: 10` → 실 타겟 ≥ 44pt
 
 ---
 
-## 5. API 호출 최적화
+## 4. 핵심 토픽 4 — 사용자 환경 (최기준 페르소나: 한 손 사용성)
 
-### backend-agent에게 요청할 사항
-- **목록 API 경량화**: 채용공고 목록 조회 시 전체 필드가 아닌 카드 표시용 필드만 반환하는 `summary` DTO 요청
-  - 예: `title`, `companyName`, `location`, `deadlineDate`, `thumbnailUrl` 등 최소 필드
-- **페이지네이션**: offset 방식보다 cursor-based pagination 권장 (무한 스크롤 성능)
-- **이미지 URL**: CDN URL + 사이즈 파라미터 지원 요청 (모바일 해상도 최적화)
+> "바쁜 근무 현장에서 점장님이 한 손으로 일정 등록을 마칠 수 있는가?"
+
+### 4-1. 엄지 존 (Thumb Zone) 설계 원칙
+
+```
+┌──────────────┐
+│   위험 구역   │  ← 네비게이션 탭, 뒤로가기만 배치
+│              │
+│   보통 구역   │  ← 캘린더, 직원 목록
+│              │
+│  편한 구역 ▼  │  ← 주요 액션 버튼 (FAB, 생성 확정)
+└──────────────┘
+```
+
+- **FAB(Floating Action Button)**: `position: 'absolute', bottom: 24, right: 24` — 오른손 엄지 도달 구역
+- **생성 확정 버튼**: 하단 고정 바 (`SafeAreaView` 안쪽), 전체 너비 버튼
+
+### 4-2. 스케줄 생성 최소 탭 수 목표
+
+| 작업 | 목표 탭 수 | 구현 방법 |
+|---|---|---|
+| 스케줄 생성 진입 | 2탭 | 대시보드 FAB → 조건 확인 |
+| 직원 추가 | 3탭 | 직원탭 → + → 이름 입력 완료 |
+| 휴무 수동 추가 | 4탭 | 휴무수집 → + 수동추가 → 직원선택 → 날짜선택 |
+| 초대 링크 전송 | 3탭 | 직원상세 → 초대하기 → 카카오톡 전송 |
+
+### 4-3. 접근성 (한 손 모드 대응)
+
+```tsx
+// 드래그 불가 환경 대비: 충돌 날짜에 탭으로 날짜 이동 가능한 대체 UI 제공
+const DayOffChip = ({ employee, date, onRelocate }) => (
+  <TouchableOpacity
+    onPress={() => openRelocatePicker(employee, date)}
+    onLongPress={() => startDrag(employee, date)}
+    accessibilityLabel={`${employee.name} 휴무 날짜 변경`}
+    accessibilityHint="길게 누르면 드래그, 짧게 누르면 날짜 선택"
+    style={styles.chip}
+  >
+    <Text>{employee.emoji} {employee.name}</Text>
+  </TouchableOpacity>
+);
+```
 
 ---
 
-## 6. iOS/Android 플랫폼 통일성
+## 5. 오프라인 큐잉 & 네트워크 회복
 
-### 주요 차이점 및 대응 방안
+### 5-1. NetInfo 기반 네트워크 상태 감지
 
-| 항목 | iOS | Android | 대응 |
-|------|-----|---------|------|
-| 하단 안전 영역 | Safe Area (노치/홈바) | 네비게이션 바 | `useSafeAreaInsets()` |
-| 뒤로가기 | 스와이프 제스처 | 하드웨어 버튼 | `BackHandler` 처리 |
-| 폰트 | San Francisco | Roboto | `fontFamily` 통일 또는 커스텀 폰트 |
-| 그림자 | `shadow*` props | `elevation` | 플랫폼별 조건부 스타일 |
-| 키보드 | `KeyboardAvoidingView behavior="padding"` | `behavior="height"` | `Platform.OS` 분기 |
+```ts
+// hooks/useNetworkStatus.ts
+import NetInfo from '@react-native-community/netinfo';
+
+export const useNetworkStatus = () => {
+  const [isConnected, setConnected] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setConnected(!!state.isConnected && !!state.isInternetReachable);
+    });
+    return unsubscribe;
+  }, []);
+
+  return { isConnected };
+};
+```
+
+### 5-2. 오프라인 큐 — TanStack Query + MMKV
+
+```ts
+// 뮤테이션 실패 시 MMKV 큐에 적재 후 네트워크 복구 시 재시도
+const offlineQueue = {
+  enqueue: (mutation: QueuedMutation) => {
+    const queue = JSON.parse(storage.getString('offlineQueue') ?? '[]');
+    storage.set('offlineQueue', JSON.stringify([...queue, mutation]));
+  },
+  flush: async () => {
+    const queue: QueuedMutation[] = JSON.parse(
+      storage.getString('offlineQueue') ?? '[]'
+    );
+    for (const item of queue) {
+      await api.replay(item);
+    }
+    storage.delete('offlineQueue');
+  },
+};
+
+// NetInfo 복구 이벤트에서 flush 호출
+NetInfo.addEventListener((state) => {
+  if (state.isConnected) offlineQueue.flush();
+});
+```
+
+> **오프라인 대응 범위**: 휴무 신청, 근무 교환 요청 — 네트워크 단절 시 큐에 적재.  
+> 스케줄 자동 생성은 서버 연산이 필요하므로 오프라인 차단 + 토스트 안내.
 
 ---
 
-## 7. 다음 단계 (Round 2 준비)
+## 6. 상태 관리 아키텍처 요약
 
-- [ ] `docs/WorKey - 프론트엔드.md` 실제 내용 확인 후 분석 보완
-- [ ] design-agent에게 RN 컴포넌트 이식성 질문 전달
-- [ ] backend-agent에게 DTO 경량화 요청 전달
-- [ ] 다른 팀원 Round 1 산출물 검토 후 리버틀 작성
+```
+┌────────────────────────────────────────────────┐
+│             전역 상태 (Zustand)                  │
+│  authStore: 토큰, 역할, 온보딩 상태               │
+│  storeStore: 현재 매장 정보                      │
+└─────────────────┬──────────────────────────────┘
+                  │
+┌─────────────────▼──────────────────────────────┐
+│         서버 상태 (TanStack Query)               │
+│  employees, schedules, dayOffRequests,          │
+│  swapRequests, storeHolidays                    │
+└─────────────────┬──────────────────────────────┘
+                  │
+┌─────────────────▼──────────────────────────────┐
+│          영속 저장소 (MMKV)                      │
+│  accessToken, refreshToken, settings,           │
+│  offlineQueue, onboardingStatus                 │
+└────────────────────────────────────────────────┘
+```
+
+---
+
+## 7. 핵심 라이브러리 후보 목록
+
+| 역할 | 라이브러리 | 버전 기준 | 선택 이유 |
+|---|---|---|---|
+| 네비게이션 | `@react-navigation/native` | v7 | RN 표준, Stack/Tab/Modal |
+| 서버 상태 | `@tanstack/react-query` | v5 | 캐싱·무효화·재시도 |
+| 전역 상태 | `zustand` | v5 | 보일러플레이트 최소 |
+| 로컬 스토리지 | `react-native-mmkv` | v3 | 동기 I/O, AES 암호화 |
+| BottomSheet | `@gorhom/bottom-sheet` | v5 | Reanimated 3, 성능 최상 |
+| 푸시 알림 | `@react-native-firebase/messaging` | v21 | FCM + APNs 통합 |
+| 네트워크 상태 | `@react-native-community/netinfo` | v11 | NetInfo 표준 |
+| 캘린더 | `react-native-calendars` | v1.13 | 달력 커스터마이징 |
+| 드래그&드롭 | `react-native-reanimated` + `react-native-gesture-handler` | v3 | 60fps 제스처 |
+| 카카오 SDK | `@react-native-kakao/share` | 공식 SDK | Feed 템플릿 공유 |
+| 딥링크 | `react-native-code-push` or `Branch.io` | — | Deferred deep link |
+
+---
+
+## 8. 리스크 및 미결 사항
+
+| 항목 | 리스크 | 대응 |
+|---|---|---|
+| FCM NoOp 상태 | 백엔드 v1.2 전까지 푸시 테스트 불가 | 인앱 토스트로 알림 대체 구현 후 교체 |
+| 드래그&드롭 (휴무 수집 뷰) | Reanimated + GestureHandler 설정 복잡도 | Worklet 기반 shared value 패턴 적용 |
+| iOS Universal Links | `apple-app-site-association` 도메인 설정 필요 | 인프라팀 협의 (§10.1) |
+| DiceBear SVG 아바타 | 30종 SVG 번들 → 앱 크기 증가 | react-native-svg + 아이콘 스프라이트 최적화 |
+| 관리자 API 인증 없음 | 현재 `permitAll` 상태 | Phase 999 적용 전 개발 편의 활용, prd 전 JWT 헤더 붙이는 interceptor 준비 |
+
+---
+
+## 9. backend-agent / design-agent 협의 예정 사항
+
+**backend-agent에 요청:**
+- 대시보드 합산 API (`GET /stores/{id}/dashboard-summary`) 경량화 응답 설계
+- FCM 토큰 등록 엔드포인트 (`POST /me/push-token`) 스펙 확인
+- 오프라인 큐 재시도 시 idempotency key 처리 방식
+
+**design-agent에 요청:**
+- `@gorhom/bottom-sheet` + 디자인 토큰 연동 가이드 (snap height, 배경색, handle indicator)
+- 캘린더 셀 터치 타겟 최소 44pt 준수 확인
+- 직원 칩 드래그 시 시각적 피드백 (shadow, scale 애니메이션) 스펙
+
+---
+
+*Round 1 완료 — backend / design 에이전트 응답 대기 후 Round 2 에서 통합 반론 작성 예정.*

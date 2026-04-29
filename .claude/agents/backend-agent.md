@@ -1,7 +1,7 @@
 ---
 name: backend-agent
 description: WorKey API 스펙과 데이터 구조를 대변하는 백엔드 에이전트
-model: claude-sonnet-4-6
+model: claude-opus-4-7
 tools: [Read, Write, Edit, Grep, Glob]
 ---
 

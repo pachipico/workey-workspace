@@ -1,99 +1,368 @@
-# Backend Round 1 Evidence
-> 작성자: backend-agent | 날짜: 2026-04-28
+# Backend Round 1 — 백엔드 입장 정리
+
+> 작성자: backend agent | 회의: frontend-kickoff-meeting | 날짜: 2026-04-29
 
 ---
 
-## ⚠️ 접근 제한 고지
+## 0. 요약
 
-`backend/` 코드 디렉토리와 `docs/WorKey - 백엔드.md` 문서에 대해 파일시스템 권한(Permission denied) 문제가 발생하여 직접 접근하지 못했습니다.  
-본 라운드 1 분석은 **`meeting/frontend-kickoff-meeting/agenda.md`에서 파악한 안건 내용**을 기반으로 작성합니다.  
-실제 코드/문서 확인 전까지는 추측성 내용임을 명시합니다.
+v1.1 백엔드는 **핵심 기능 API 전체 완성** 상태. FCM 발송 인프라(NoOp)·관리자 API 인가·딥링크 파일 서빙만 v1.2 항목으로 남아있다. 본 문서는 React Native 모바일 앱 연동 관점에서 **4대 핵심 토픽 각각에 대한 백엔드 입장**을 정리한다.
 
 ---
 
-## 1. 회의 안건 기반 백엔드 검토 포인트
+## 1. 실제 구현된 API 엔드포인트 목록
 
-`agenda.md`의 핵심 논의 사항 4가지를 백엔드 관점에서 분석합니다.
+> 서버 포트: **9090** | 공통 응답 래퍼: `CommonResponse<T> { success: bool, result: T[] }`
 
-### 1-1. 모바일 최적화 API (앱 초기 로딩 최소화)
+### 1.1 인증 (Auth)
 
-**안건 원문:**  
-> 앱 초기 로딩 시 데이터 요청을 최소화하기 위한 백엔드 응답 구조 개선
+```
+POST /auth/kakao/callback    # 카카오 OAuth code → JWT 발급
+POST /auth/refresh           # Refresh Token → 새 Token 쌍
+POST /auth/logout            # Refresh Token 무효화
+```
 
-**백엔드 관점 쟁점:**
-- 현재 REST API가 개별 리소스 단위(1 endpoint = 1 resource)로 설계되어 있다면, 모바일 앱 초기 화면에서 N개의 API를 순차/병렬 호출해야 하는 문제가 발생할 수 있음
-- 검토 필요 사항:
-  - **Aggregation API (BFF 패턴)** 도입 여부: `/api/v1/mobile/home` 형태로 초기 화면에 필요한 데이터를 단일 응답으로 묶어 반환
-  - **페이지네이션 커서 방식** 적용 여부: 모바일에서 스크롤 기반 UX를 위해 offset → cursor 방식 전환 필요성
-  - **필드 스파스(Sparse fieldsets)** 지원 여부: 모바일이 불필요한 heavy 필드를 제외하고 필요한 필드만 요청 가능한지
+#### Request/Response 상세
 
-**현재 알 수 없는 것:** 실제 엔드포인트 구조, DTO 필드 목록, 응답 크기
+```json
+// POST /auth/kakao/callback
+// Request
+{
+  "code": "kakao_auth_code",
+  "redirectUri": "http://...",
+  "inviteToken": "optional_invite_token"
+}
+
+// Response (CommonResponse)
+{
+  "success": true,
+  "result": [{
+    "accessToken": "eyJ...",
+    "refreshToken": "eyJ...",
+    "expiresIn": 1800
+  }]
+}
+```
+
+### 1.2 나의 정보 (Me)
+
+```
+GET    /me/onboarding-status            # 온보딩 상태 (STORE_MISSING / INVITE_PENDING / STORE_CONFLICT / COMPLETE)
+POST   /me/confirm-store-switch         # 매장 전환 확인/취소
+GET    /me/schedules?year=&month=       # 내 월별 스케줄 조회
+PATCH  /me/fcm-token                    # FCM 푸시 토큰 등록 ✅ (API 존재, NoOp 어댑터)
+GET    /me/swap-requests                # 근무 교환 이력 (paging)
+```
+
+#### OnboardingStatusResponse
+
+```json
+{
+  "success": true,
+  "result": [{
+    "role": "EMPLOYEE",
+    "status": "STORE_CONFLICT",
+    "storeId": 42,
+    "currentStore": { "id": 42, "name": "현재 매장" },
+    "pendingStore":  { "id": 99, "name": "초대된 새 매장" }
+  }]
+}
+```
+
+#### MyScheduleResponse
+
+```json
+{
+  "success": true,
+  "result": [{
+    "year": 2026,
+    "month": 5,
+    "entries": [
+      { "entryId": 101, "date": "2026-05-01", "status": "ON" },
+      { "entryId": 102, "date": "2026-05-02", "status": "OFF" }
+    ]
+  }]
+}
+```
+
+#### FCM 토큰 등록
+
+```json
+// PATCH /me/fcm-token
+// Request
+{ "fcmToken": "firebase_registration_token_string" }
+// Response
+{ "success": true, "result": [] }
+```
+
+### 1.3 직원 (Employee)
+
+```
+POST   /stores/{storeId}/employees                        # 직원 등록 (201)
+GET    /stores/{storeId}/employees                        # 직원 목록
+PATCH  /employees/{employeeId}                            # 직원 수정
+DELETE /employees/{employeeId}                            # 직원 삭제
+PATCH  /stores/{storeId}/employees/day-off-per-month      # dayOffPerMonth 일괄 수정
+POST   /employees/{id}/invite                             # 초대 링크 생성
+POST   /employees/{id}/day-off-requests                   # 휴무 신청
+```
+
+#### EmployeeResponse
+
+```json
+{
+  "id": 1,
+  "storeId": 42,
+  "name": "김민준",
+  "dayOffPerMonth": 8,
+  "surplusDayOffOption": "SPREAD",
+  "profileAvatar": "AVATAR_03"
+}
+```
+
+### 1.4 스케줄 (Schedule)
+
+```
+POST  /stores/{storeId}/schedules/generate                 # 스케줄 자동 생성
+GET   /stores/{storeId}/schedules?year=&month=             # 월별 스케줄 조회
+GET   /schedules/{scheduleId}/entries                      # 엔트리 목록
+GET   /schedules/{scheduleId}/export/png                   # PNG (binary)
+GET   /schedules/{scheduleId}/export/xlsx                  # Excel (binary)
+GET   /schedules/{scheduleId}/export/ics                   # iCal (binary)
+GET   /stores/{storeId}/schedules/annual?year=             # 연간 근무 통계
+PATCH /stores/{storeId}/schedules/{year}/{month}/entries   # 수동 Bulk 수정
+```
+
+#### ScheduleDetailResponse
+
+```json
+{
+  "scheduleId": 10,
+  "year": 2026, "month": 5,
+  "minStaffPerDay": 2,
+  "violated": false,
+  "violations": [],
+  "entries": {
+    "김민준": [
+      { "entryId": 101, "date": "2026-05-01", "status": "ON" }
+    ],
+    "이수아": [
+      { "entryId": 201, "date": "2026-05-01", "status": "OFF" }
+    ]
+  },
+  "closedDays": ["2026-05-05"]
+}
+```
+
+### 1.5 매장 (Store)
+
+```
+POST   /stores              # 매장 등록 (201)
+GET    /stores/{storeId}    # 매장 조회
+PATCH  /stores/{storeId}    # 매장 수정
+DELETE /stores/{storeId}    # 매장 삭제 (연쇄 삭제 포함)
+```
 
 ---
 
-### 1-2. 네이티브 연동 (푸시 알림, 로컬 스토리지)
+## 2. 4대 핵심 토픽 — 백엔드 입장
 
-**안건 원문:**  
-> 푸시 알림, 로컬 스토리지 활용 등 React Native의 특징을 반영한 기능 구현 방식
+### 2.1 모바일 최적화 API (앱 초기 로딩 데이터 최소화)
 
-**백엔드 관점 쟁점:**
-- **푸시 알림:**
-  - FCM(Firebase Cloud Messaging) 연동을 위해 백엔드에서 디바이스 토큰 저장 API 필요 여부
-  - 알림 발송 트리거(스케줄 등록, 변경, 취소 시점)와 비즈니스 로직 연결 방식
-  - 현재 백엔드에 알림(Notification) 도메인 및 FCM 연동 코드 존재 여부를 확인하지 못함
-- **로컬 스토리지(오프라인 지원):**
-  - 오프라인 상태에서 작성한 데이터를 온라인 복귀 시 동기화할 동기화 API 필요 여부
-  - 충돌 해결(Conflict resolution) 전략: 서버 우선 vs 클라이언트 우선
+**현재 상태:** 모바일 전용 BFF/aggregation 엔드포인트 **없음**. 앱 홈화면 초기화 시 최소 3건의 병렬 API 호출이 필요하다.
 
----
+| 화면 초기화 시 필요한 호출 | 엔드포인트 |
+|---|---|
+| 온보딩 분기 판단 | `GET /me/onboarding-status` |
+| 내 이번달 스케줄 | `GET /me/schedules?year=&month=` |
+| 매장 정보 (관리자) | `GET /stores/{storeId}` + `GET /stores/{storeId}/employees` |
 
-### 1-3. 디자인 이식 (BottomSheet 등 모바일 컴포넌트)
+**백엔드 제안 — v1.2 BFF 엔드포인트:**
 
-**안건 원문:**  
-> 모바일 컴포넌트(BottomSheet 등) 사용 시 디자인 시스템 가이드 준수 여부
+```http
+GET /me/home-summary
+```
 
-**백엔드 관점:**
-- 이 안건은 주로 프론트엔드/디자인 관할이나, 백엔드에서 고려할 사항:
-  - BottomSheet 등에서 **실시간 검색/자동완성**이 필요한 경우, debounce 처리를 고려한 검색 API 응답 속도(< 300ms 목표) 확보 여부
-  - 드롭다운 선택지(예: 직원 목록, 포지션 목록) 제공을 위한 **코드성 데이터 API** 캐싱 전략
+```json
+// 제안 Response
+{
+  "success": true,
+  "result": [{
+    "onboardingStatus": "COMPLETE",
+    "role": "EMPLOYEE",
+    "currentStore": { "id": 42, "name": "워키 카페" },
+    "thisMonth": {
+      "year": 2026, "month": 5,
+      "workDays": 22, "offDays": 9,
+      "entries": [ ... ]
+    },
+    "upcomingOff": ["2026-05-03", "2026-05-10"]
+  }]
+}
+```
 
----
-
-### 1-4. 사용자 환경 (점장 한 손 조작 UX)
-
-**안건 원문:**  
-> 바쁜 근무 현장에서 점장님이 한 손으로 일정 등록을 마칠 수 있는가?
-
-**백엔드 관점:**
-- UX 흐름 최적화를 위해 필요한 API 특성:
-  - **입력 단계 최소화**: 스케줄 등록 시 필수 필드만으로 저장 가능한지(초안 저장 지원 여부)
-  - **스마트 기본값**: 서버에서 마지막 근무 패턴 기반 기본값 제안 API 제공 여부
-  - **응답 속도**: 모바일 네트워크(LTE/5G) 환경에서 목표 응답시간 정의 필요 (권장: P95 < 500ms)
-
----
-
-## 2. Round 2에서 프론트엔드에게 질문할 사항 (예비)
-
-1. 앱 초기 화면(홈)에서 한 번의 API 호출로 가져와야 하는 데이터 목록은 무엇인가?
-2. 오프라인 모드 지원 범위: 읽기 전용인가, 쓰기도 포함인가?
-3. 푸시 알림 수신 시 딥링크 처리 방식이 결정되었는가?
+> **현재 v1.1 범위 外.** RN 앱은 `Promise.all([api1, api2, api3])` 병렬 호출로 우선 구현하고, v1.2에서 BFF 도입 여부를 결정할 것을 권장한다.
 
 ---
 
-## 3. 확인이 필요한 실제 코드/문서 접근 요청
+### 2.2 네이티브 연동 — FCM 푸시 알림
 
-| 확인 대상 | 경로 | 목적 |
+**현재 구현 상태:**
+
+| 항목 | 상태 |
+|---|---|
+| FCM 토큰 등록 API (`PATCH /me/fcm-token`) | ✅ 구현 완료 |
+| `SendNotificationPort` 인터페이스 | ✅ 정의 완료 |
+| 알림 발송 어댑터 | ❌ `NoOpNotificationAdapter` (로그만 출력) |
+| 알림 스케줄러 로직 (3종) | ✅ 완성 (쉬기 전날 20:00, 관리자 07:00, 미확인 독촉) |
+
+**앱 → 서버 FCM 토큰 등록 흐름:**
+
+```
+RN 앱 최초 실행
+  → FirebaseMessaging.getToken() 호출
+  → 로그인 완료 후 PATCH /me/fcm-token { "fcmToken": "..." }
+  → 서버: members 테이블 fcm_token 컬럼 저장
+
+토큰 갱신 이벤트 (onTokenRefresh)
+  → PATCH /me/fcm-token 재호출
+```
+
+**푸시 페이로드 스펙 (v1.2 연동 시 예상 구조):**
+
+```json
+// 쉬기 전날 알림 (직원용)
+{
+  "notification": { "title": "내일은 휴무예요 🌙", "body": "5월 10일(일)이 휴무예요." },
+  "data": { "type": "DAY_OFF_REMINDER", "date": "2026-05-10", "storeId": "42" }
+}
+
+// 당일 근무 현황 (관리자용)
+{
+  "notification": { "title": "오늘의 근무 현황", "body": "근무: 김민준, 이수아 / 휴무: 박지호" },
+  "data": { "type": "DAILY_WORK_SUMMARY", "date": "2026-05-01", "storeId": "42" }
+}
+
+// 근무 교환 요청 (상대 직원용)
+{
+  "notification": { "title": "근무 교환 요청", "body": "김민준님이 5/3↔5/10 교환을 요청했어요." },
+  "data": { "type": "SWAP_REQUEST", "swapRequestId": "123" }
+}
+```
+
+---
+
+### 2.3 디자인 이식 — 바텀시트 API 연동 타이밍
+
+바텀시트 등 컴포넌트 자체는 백엔드와 무관하나, **UX 흐름별 API 호출 타이밍**을 정리한다:
+
+| UX 액션 | 필요 API | 응답 속도 기대 |
 |---|---|---|
-| 백엔드 API 문서 | `docs/WorKey - 백엔드.md` | 실제 엔드포인트 및 DTO 구조 파악 |
-| Controller 파일 | `backend/src/main/java/**/controller/` | 현재 구현된 API 목록 확인 |
-| DTO 파일 | `backend/src/main/java/**/dto/` | 요청/응답 필드 구조 확인 |
-| 알림 도메인 | `backend/src/main/java/**/notification/` | FCM 연동 현황 파악 |
+| 초대 바텀시트 열기 | `POST /employees/{id}/invite` | < 500ms |
+| 휴무 신청 바텀시트 제출 | `POST /employees/{id}/day-off-requests` | < 500ms |
+| 매장 전환 확인 바텀시트 | `POST /me/confirm-store-switch` | < 500ms |
+| 스케줄 생성 확정 버튼 | `POST /stores/{storeId}/schedules/generate` | **1~5초 가능** (알고리즘 실행) |
 
-**→ team-lead에게 파일시스템 권한 부여 또는 관련 문서 공유 요청 예정**
+> **스케줄 생성 API 응답 지연 주의:** 직원 수 × 일수 비례. 앱 측에서 로딩 스피너와 타임아웃 처리 필수.
 
 ---
 
-## 4. Round 1 결론
+### 2.4 사용자 환경 — 한 손 조작 (최기준 페르소나 검증)
 
-현재 권한 제한으로 인해 실제 코드 기반 분석이 불가능한 상태입니다.  
-의제 기반으로 백엔드가 검토해야 할 핵심 쟁점을 정리했으며, Round 2에서 프론트엔드 에이전트와의 협의를 통해 구체적인 API 구조 개선 방향을 제안할 예정입니다.
+관리자가 모바일에서 스케줄을 생성하는 최소 API 호출 경로:
+
+```
+1회: POST /stores/{storeId}/schedules/generate
+     Body: { year, month, minStaffPerDay, confirmedDayOffs: [...] }
+     → 단 1번의 API 호출로 스케줄 생성
+
+1회: GET  /stores/{storeId}/schedules?year=&month=
+     → 결과 확인 (캐시로 대체 가능)
+```
+
+최소 2번의 API 호출로 "조건 입력 → 스케줄 완성" 플로우 완결 가능. 한 손 조작에 무리 없는 수준.
+
+---
+
+## 3. JWT / Refresh Token 흐름 (RN 보안 고려)
+
+### 현재 스펙
+
+| 항목 | 값 |
+|---|---|
+| Access Token 유효기간 | 30분 (`expiresIn: 1800`) |
+| Refresh Token 유효기간 | 7일 |
+| Rotation | Refresh 시 새 Refresh Token 발급 + 기존 무효화 |
+| 서버 저장 위치 | MySQL `refresh_tokens` 테이블 |
+
+### RN 보안 권고
+
+```
+현재 AsyncStorage 사용 시 위험:
+  → 루팅/탈옥 기기에서 평문 탈취 가능
+
+권장:
+  iOS:     expo-secure-store → Keychain Services
+  Android: expo-secure-store → Android Keystore
+```
+
+### 토큰 재발급 흐름
+
+```
+API 호출 → 401 Unauthorized
+  ↓
+POST /auth/refresh { "refreshToken": "..." }
+  ↓ 성공: 새 토큰 저장 → 원래 요청 재시도
+  ↓ 실패(만료/무효): 카카오 OAuth 재인증 시작
+```
+
+---
+
+## 4. 페이로드 경량화 전략
+
+### 공통 응답 래퍼 주의사항
+
+```json
+// CommonResponse 구조
+{ "success": true, "result": [ <데이터> ] }
+
+// 단건 조회도 항상 배열 → RN에서 result[0] 으로 꺼내야 함
+const employee = response.data.result[0];
+```
+
+### 경량화 전략 현황
+
+| 전략 | 현재 지원 | 비고 |
+|---|---|---|
+| gzip 압축 | ✅ (Spring Boot 기본) | 자동 적용 |
+| Sparse fieldset (`?fields=`) | ❌ | v1.2 검토 |
+| ETag / If-None-Match | ❌ | 스케줄 캐싱에 효과적, v1.2 검토 |
+| GraphQL | ❌ | 도입 비용 대비 효과 재검토 필요 |
+
+**실용적 권장사항:**
+- `ScheduleDetailResponse.entries` 는 직원 수 × 30일 크기 → lazy loading 분리 (`GET /schedules/{id}/entries`)
+- 앱에서 월 단위 로컬 캐시 구현으로 리렌더 최소화
+
+---
+
+## 5. 딥링크 — 백엔드 서빙 필요 파일 (v1.2)
+
+```
+https://workey.app/.well-known/apple-app-site-association   # iOS Universal Links
+https://workey.app/.well-known/assetlinks.json              # Android App Links
+```
+
+현재 미서빙. 앱 스토어 출시 전 v1.2에서 처리. 비즈니스 로직과 무관한 정적 파일 서빙.
+
+---
+
+## 6. v1.2 미결 항목 요약
+
+| 항목 | 현재 상태 | 필요 작업 |
+|---|---|---|
+| FCM 실제 발송 | NoOp 어댑터 | Firebase Admin SDK 연동 |
+| 관리자 API 인증 | `anyRequest().permitAll()` | JWT 인증 적용 (Phase 999) |
+| DEV 백도어 | `/dev/**` 존재 | prd 배포 전 삭제 필수 |
+| 딥링크 정적 파일 | 미서빙 | AASA / assetlinks.json |
+| BFF 홈 요약 | 없음 | 검토 필요 (v1.2) |
+| 프로필 아바타 UI | AVATAR_01~30 enum 완성 | SVG 번들·selector UI (프론트) |
