@@ -1,7 +1,7 @@
 ---
 name: moderator-lead
 description: WorKey 프로젝트의 Agent Team 회의를 주관하는 리더 (V3 Strict Protocol)
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools: [Read, Grep, Glob]
 ---
 

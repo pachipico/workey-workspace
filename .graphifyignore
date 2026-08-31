@@ -1,0 +1,31 @@
+.agents/
+.claude/
+.codex/
+.git/
+.hermes/
+.idea/
+
+# --- build / vendored / native deps (knowledge-graph noise) ---
+node_modules/
+frontend/ios/
+frontend/android/
+frontend/vendor/
+frontend/Pods/
+backend/build/
+backend/.gradle/
+graphify-out/
+generated-audio/
+
+# --- process / tooling artifacts ---
+backend/.planning/
+frontend/.planning/
+.playwright-mcp/
+frontend/.playwright-mcp/
+design/.playwright-mcp/
+design/.design-review-tmp/
+
+# --- design binary captures (not product knowledge) ---
+design/screenshots/
+design/preview/
+design/export/
+design/assets/

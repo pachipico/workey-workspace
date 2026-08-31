@@ -1,0 +1,2241 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorKey 진척도 대시보드</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #181b22;
+    --card: #1f232d;
+    --card-hover: #262b37;
+    --border: #2c3240;
+    --text: #e6e9ef;
+    --text-dim: #9aa3b2;
+    --accent: #4f8cff;
+    --done: #3fb950;
+    --inprog: #d29922;
+    --todo: #6e7681;
+    --danger: #f85149;
+    --custom: #a371f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+
+  /* tabs */
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .tab {
+    padding: 8px 18px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--panel); color: var(--text-dim); cursor: pointer; font-size: 14px;
+  }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+  /* summary bars */
+  .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  @media (max-width: 700px) { .summary { grid-template-columns: 1fr; } }
+  .sum-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .sum-card .label { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .bar { height: 10px; background: var(--card); border-radius: 5px; overflow: hidden; display: flex; }
+  .bar .seg-done { background: var(--done); height: 100%; }
+  .bar .seg-inprog { background: var(--inprog); height: 100%; }
+  .pct { font-weight: 700; color: var(--text); }
+
+  /* toolbar */
+  .toolbar { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .btn {
+    padding: 7px 14px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--card); color: var(--text); cursor: pointer; font-size: 13px;
+  }
+  .btn:hover { background: var(--card-hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .search-box {
+    padding: 7px 12px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--card); color: var(--text); font-size: 13px; flex: 1; min-width: 180px;
+  }
+  .filter-sel {
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--card); color: var(--text); font-size: 13px;
+  }
+  .dep-link {
+    display: inline-block; padding: 3px 10px; margin: 2px 4px 2px 0;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--card);
+    color: var(--accent); font-size: 12px; font-family: ui-monospace, monospace;
+    cursor: pointer; font-weight: 600;
+  }
+  .dep-link:hover { background: var(--card-hover); }
+  .memo-area {
+    width: 100%; min-height: 64px; padding: 8px 10px; margin-top: 4px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card); color: var(--text); font-size: 13px;
+    font-family: inherit; resize: vertical;
+  }
+  .badge.memo { background: rgba(79,140,255,0.15); color: var(--accent); }
+  .log-list { font-size: 12px; line-height: 1.8; max-height: 420px; overflow-y: auto; }
+  .log-list .log-time { color: var(--text-dim); font-family: ui-monospace, monospace; margin-right: 8px; }
+  .log-list .log-id { color: var(--accent); font-weight: 600; font-family: ui-monospace, monospace; cursor: pointer; }
+
+  /* sections */
+  .track-section { margin-bottom: 28px; }
+  .track-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .track-sub { font-size: 12px; color: var(--text-dim); margin-bottom: 12px; }
+  .prio-group { margin-bottom: 14px; }
+  .prio-label { font-size: 12px; font-weight: 600; color: var(--text-dim); margin-bottom: 8px; letter-spacing: 0.5px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; cursor: pointer; transition: background 0.1s;
+    border-left: 4px solid var(--todo);
+  }
+  .card:hover { background: var(--card-hover); }
+  .card.done { border-left-color: var(--done); }
+  .card.in_progress { border-left-color: var(--inprog); }
+  .card.custom-item { border-left-style: dashed; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; }
+  .card-id { font-size: 12px; font-weight: 700; color: var(--accent); font-family: ui-monospace, monospace; }
+  .badges { display: flex; gap: 4px; flex-wrap: wrap; }
+  .badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+  .badge.st-done { background: rgba(63,185,80,0.15); color: var(--done); }
+  .badge.st-in_progress { background: rgba(210,153,34,0.15); color: var(--inprog); }
+  .badge.st-todo { background: rgba(110,118,129,0.2); color: var(--text-dim); }
+  .badge.mismatch { background: rgba(248,81,73,0.15); color: var(--danger); cursor: pointer; }
+  .badge.custom { background: rgba(163,113,247,0.15); color: var(--custom); }
+  .card-title { font-size: 13px; line-height: 1.45; }
+  .card.done .card-title { color: var(--text-dim); }
+  .card-meta { font-size: 11px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+  .mini-btn { font-size: 11px; padding: 3px 9px; border-radius: 5px; border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); cursor: pointer; }
+  .mini-btn:hover { color: var(--text); }
+  .mini-btn.del { color: var(--danger); }
+
+  /* detail modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: none; align-items: flex-start; justify-content: center;
+    padding: 40px 16px; z-index: 20; overflow-y: auto;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    max-width: 720px; width: 100%; padding: 22px 24px; position: relative;
+  }
+  .modal-close {
+    position: absolute; top: 14px; right: 14px;
+    background: none; border: none; color: var(--text-dim); font-size: 18px; cursor: pointer;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal .m-id { font-size: 13px; font-weight: 700; color: var(--accent); font-family: ui-monospace, monospace; }
+  .modal .m-title { font-size: 16px; font-weight: 700; margin: 6px 0 10px; line-height: 1.4; }
+  .modal .m-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .modal .m-section-label { font-size: 11px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.5px; margin: 14px 0 6px; }
+  .modal .m-status-btns { display: flex; gap: 6px; }
+  .m-status-btn {
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card); color: var(--text-dim); cursor: pointer; font-size: 12px;
+  }
+  .m-status-btn.active-todo { border-color: var(--todo); color: var(--text); background: rgba(110,118,129,0.25); }
+  .m-status-btn.active-in_progress { border-color: var(--inprog); color: var(--inprog); background: rgba(210,153,34,0.15); }
+  .m-status-btn.active-done { border-color: var(--done); color: var(--done); background: rgba(63,185,80,0.15); }
+  .m-detail { font-size: 13px; line-height: 1.7; }
+  .m-detail .d-line { padding: 1px 0; }
+  .m-detail .d-line .d-key { color: var(--text-dim); }
+  .m-detail code { background: var(--card); border-radius: 4px; padding: 1px 5px; font-size: 12px; font-family: ui-monospace, monospace; }
+  .modal .m-footer { display: flex; gap: 6px; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .m-empty { color: var(--text-dim); font-size: 13px; }
+
+  /* add form */
+  .add-form {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 24px; display: none;
+  }
+  .add-form.open { display: block; }
+  .add-form h3 { font-size: 14px; margin-bottom: 12px; }
+  .form-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .add-form input[type="text"], .add-form select {
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card); color: var(--text); font-size: 13px;
+  }
+  .add-form input[type="text"] { flex: 1; min-width: 200px; }
+
+  .hint { font-size: 11px; color: var(--text-dim); margin-top: 30px; line-height: 1.7; border-top: 1px solid var(--border); padding-top: 12px; }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 20px; font-size: 13px; display: none; z-index: 10;
+  }
+  .toast.show { display: block; }
+  .empty-msg { color: var(--text-dim); font-size: 13px; padding: 8px 0; }
+</style>
+</head>
+<body>
+
+<h1>WorKey 진척도 대시보드</h1>
+<div class="subtitle" id="seedInfo"></div>
+
+<div class="tabs">
+  <button class="tab active" data-scope="ALL">전체</button>
+  <button class="tab" data-scope="BE">백엔드</button>
+  <button class="tab" data-scope="FE">프론트엔드</button>
+</div>
+
+<div class="summary" id="summary"></div>
+
+<div class="toolbar">
+  <input type="text" id="searchBox" class="search-box" placeholder="검색: ID, 제목, 세부사항...">
+  <select id="statusFilter" class="filter-sel">
+    <option value="ALL">모든 상태</option>
+    <option value="todo">미완료만</option>
+    <option value="in_progress">진행중만</option>
+    <option value="done">완료만</option>
+    <option value="open">미완료+진행중</option>
+  </select>
+  <button class="btn primary" id="btnAdd">기능 추가</button>
+  <button class="btn" id="btnLog">변경 이력</button>
+  <button class="btn" id="btnExport">JSON 내보내기</button>
+  <button class="btn" id="btnImport">JSON 가져오기</button>
+  <button class="btn" id="btnReseedHelp">SSOT에서 가져오기</button>
+  <button class="btn" id="btnReset">로컬 변경 초기화</button>
+  <input type="file" id="fileImport" accept=".json" style="display:none">
+</div>
+
+<div class="add-form" id="addForm">
+  <h3>새 기능 추가</h3>
+  <div class="form-row">
+    <select id="newTrack">
+      <option value="MVP">MVP (1순위)</option>
+      <option value="EMP">직원앱 (2단계)</option>
+    </select>
+    <select id="newScope">
+      <option value="BE">백엔드</option>
+      <option value="FE">프론트엔드</option>
+    </select>
+    <select id="newPrio">
+      <option value="P0">P0</option>
+      <option value="P1" selected>P1</option>
+      <option value="P2">P2</option>
+    </select>
+  </div>
+  <div class="form-row">
+    <input type="text" id="newTitle" placeholder="기능 제목 (예: 스케줄 PDF 내보내기)">
+  </div>
+  <div class="form-row">
+    <input type="text" id="newNote" placeholder="메모 (선택)">
+  </div>
+  <div class="form-row">
+    <button class="btn primary" id="btnSaveNew">추가</button>
+    <button class="btn" id="btnCancelNew">취소</button>
+  </div>
+</div>
+
+<div id="content"></div>
+
+<div class="hint">
+  사용법: 카드 클릭 = 세부사항 모달. 카드의 상태 뱃지 클릭 = 상태 순환 (미완료 - 진행중 - 완료). 상태 변경은 모달 안 버튼으로도 가능.<br>
+  모달에서 의존성 ID 클릭 = 해당 항목으로 이동. 항목별 개인 메모 작성 가능. 변경 이력 버튼 = 상태 변경 기록 조회.<br>
+  상태·메모·이력은 브라우저 localStorage에 자동 저장. JSON 내보내기로 백업 가능.<br>
+  SSOT(WorKey - 전체 진척도.md) 갱신 후 <code>python3 dashboard/generate_seed.py</code> 실행하면 이 파일의 시드가 갱신됨.
+  시드 갱신 후 내 로컬 상태와 SSOT가 다른 항목엔 "SSOT 불일치" 뱃지가 뜨고, 뱃지 클릭으로 SSOT 값을 수용할 수 있음.
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<script>
+/*SEED_START*/
+const SEED = {
+  "generatedAt": "2026-08-19 16:21 KST",
+  "items": [
+    {
+      "id": "MVP-BE-001",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "Phase 998 FCM 실연동 구현",
+      "done": true,
+      "note": "`workey-api` Phase 998 5/5 plans complete. Firebase Admin SDK 9.9.0, `app.fcm.enabled` 조건부 Firebase/Fcm/NoOp 빈 선택, `AFTE...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: `workey-api` Phase 998 5/5 plans complete. Firebase Admin SDK 9.9.0, `app.fcm.enabled` 조건부 Firebase/Fcm/NoOp 빈 선택, `AFTER_COMMIT` FCM 이벤트 리스너, V49 notifications.type ENUM, token clear 분류, channel/thread-id 배선 구현."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: `998-VERIFICATION.md` 기준 12/13 must-haves verified. 남은 1건은 FCM data `notificationId` 미포함 여부에 대한 human 판단이며, 사용자 결정상 non-blocking으로 수용됨."
+        },
+        {
+          "lvl": 0,
+          "text": "범위 제외: 실제 기기 수신 evidence는 MVP-BE-002 / MVP-FE-002에서 별도 추적한다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-002",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "실제 푸시 수신 evidence 확보 (Android advisory)",
+      "done": true,
+      "note": "backend Phase 998/998.1 및 frontend FCM live path는 구현됐다. 2026-06-17 Android 에뮬레이터 advisory FCM receipt 확보 — `DAY_OFF_REQU...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: backend Phase 998/998.1 및 frontend FCM live path는 구현됐다. 2026-06-17 Android 에뮬레이터 advisory FCM receipt 확보 — `DAY_OFF_REQUESTED`(channelId `ADMIN_REVIEW`) 알림을 ADMIN 수신, shade/background/foreground 3종 표시 캡쳐(evidence: `frontend/.planning/evidence/MVP-FE-002-fcm-android/`). iOS receipt는 Apple Developer 계정 미보유로 MVP-BE-012로 분리(프로덕션 강한 blocker 아님, Android 우선 출시 가능)."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: Android advisory 1건 이상 실제 FCM receipt 기록(기기/계정/알림type/시간/수신형태). iOS receipt는 MVP-BE-012로 이관."
+        },
+        {
+          "lvl": 0,
+          "text": "확인 기준: launch evidence 문서 또는 별도 evidence 파일에 기기/계정/알림 type/시간/수신 형태가 기록되어 있다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-003",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "release-target `/dev/**` 백도어 제거 증명",
+      "done": true,
+      "note": "`workey-api` source/local 및 Phase 46 UAT 기준 `DevTokenController` 제거, `/dev/**` 매처 제거는 확인됐다. 2026-06-16 14:45 KST live lo...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: `workey-api` source/local 및 Phase 46 UAT 기준 `DevTokenController` 제거, `/dev/**` 매처 제거는 확인됐다. 2026-06-16 14:45 KST live local 재확인: `GET /v3/api-docs` HTTP 200, OpenAPI paths 64개 중 `/dev/**` 0개, `POST /dev/token/admin` path 없음. 2026-06-16 15:28 KST release-target(`https://workey-api.itwilllab.kro.kr`) live proof: `GET /v3/api-docs` 200(paths 62, `/dev` 0개), ADMIN JWT(sub:37)로 `POST/GET /dev/token*`·`/dev/anything` → 404, 무인증 → 403. 배포본 백도어 차단 확정."
+        },
+        {
+          "lvl": 0,
+          "text": "주의: legacy repo `scheduler`에는 `DevTokenController`/`/dev/** permitAll`이 남아 있으나 현재 WorKey 백엔드 SSOT는 `workey-api`다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: release-target에서 `/dev/token/*` 또는 `/dev/**`가 404/403 등으로 차단됨이 기록된다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-004",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "backend `/dev/**` 재등장 방지 guard의 CI 실행 evidence 확보",
+      "done": true,
+      "note": "`DevBackdoorSourceGuardTest` source-level guard 존재 + 2026-06-17 `deploy-main.yml`에 `dev-backdoor-guard` job(`No /dev/**...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: `DevBackdoorSourceGuardTest` source-level guard 존재 + 2026-06-17 `deploy-main.yml`에 `dev-backdoor-guard` job(`No /dev/** in src/main/java`) 추가 — `src/main/java`에서 `DevTokenController`/`/dev/token`/`/dev/**` grep fail-gate, `build-and-push`가 `needs`로 의존해 통과해야 배포 진행(push:main+workflow_dispatch). GitHub Actions 실제 run 확인: guard job push 트리거 Successful(6s), 후속 Build & Push/Deploy job도 Successful → 게이트 동작 + run evidence 확보(스크린샷: `backend/.planning/phases/999-dev-backdoor-removal/MVP-BE-004-ci-guard-run-evidence.png`)."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: backend CI에서 해당 테스트 또는 동등 guard가 실행되고 실제 CI run evidence가 기록된다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-005",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "`DELETE /me` 회원 탈퇴 API 불일치 해결",
+      "done": true,
+      "note": "2026-06-15 live OpenAPI `/me` path에 `DELETE` 노출 확인. `MeWithdrawalController` `@DeleteMapping(\"/me\")` → `DeleteMemberUseC...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 2026-06-15 live OpenAPI `/me` path에 `DELETE` 노출 확인. `MeWithdrawalController` `@DeleteMapping(\"/me\")` → `DeleteMemberUseCase`(impl 존재) 배선. 프론트 `SettingsScreen` 탈퇴 flow(`apiClient.delete('/me')`)와 계약 일치. 드리프트 해소."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준 중 하나:"
+        },
+        {
+          "lvl": 1,
+          "text": "백엔드에 `DELETE /me` API가 추가되고 OpenAPI에 노출된다."
+        },
+        {
+          "lvl": 1,
+          "text": "또는 프론트에서 해당 호출/버튼이 MVP scope 밖으로 제거·비활성화된다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-006",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "API 인증 실패 응답 계약 고정 (`/login` 기본 로그인창 노출 차단 + JSON 계약)",
+      "done": true,
+      "note": "Phase 49에서 `WorkeyAuthenticationEntryPoint`(미인증 401 JSON)와 `WorkeyAccessDeniedHandler`(권한없음 403 JSON)를 `SecurityConfig.e...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: Phase 49에서 `WorkeyAuthenticationEntryPoint`(미인증 401 JSON)와 `WorkeyAccessDeniedHandler`(권한없음 403 JSON)를 `SecurityConfig.exceptionHandling`에 연결했다."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: 2026-06-16 14:45 KST live `GET /stores/1` 및 `DELETE /me` 무인증 요청은 HTTP 401 + `application/json`으로 내려오고, 302 redirect / 200 login HTML / 빈 body가 재현되지 않는다. `SecurityExceptionHandlerTest`도 401/403 JSON 계약을 고정한다."
+        },
+        {
+          "lvl": 0,
+          "text": "프론트 계약: `workeyApp/src/shared/api/client.ts`는 `error.response?.status !== 401`이면 refresh를 트리거하지 않으므로, BE-006의 401/403 분리와 정합한다."
+        },
+        {
+          "lvl": 0,
+          "text": "범위 제외: 실제 release-target 환경에서 동일 응답이 보이는지는 release-target proof 수집 시 함께 확인한다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-008",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "4xx/5xx ErrorResponse ETag/캐시 헤더 누수 차단",
+      "done": true,
+      "note": "2026-06-01 backend phase 외 작업으로 수정 완료. 원인: `WebRequest.checkNotModified(eTag)`가 200/304 확정 전 servlet response에 ETag를 기록했...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 2026-06-01 backend phase 외 작업으로 수정 완료. 원인: `WebRequest.checkNotModified(eTag)`가 200/304 확정 전 servlet response에 ETag를 기록했고, 이후 usecase 404가 발생하면 `ETag + Cache-Control: max-age=60, private`가 ErrorResponse에 누수됐다."
+        },
+        {
+          "lvl": 0,
+          "text": "처리: `ETagConditional` 직접 비교로 ETag 기록을 304 확정 또는 200 성공 직전까지 지연하고, `ErrorResponseCacheHeaderAdvice`로 모든 ErrorResponse에 `Cache-Control: no-store`를 보장한다."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: 백엔드 문서 기준 monthly/matrix/entries/annual/history ETag endpoint 8종 회귀 테스트와 live 검증 완료. 부재 스케줄은 `404 + no-store + ETag 없음`, 존재 스케줄은 `200 + ETag`, If-None-Match 일치는 `304`."
+        },
+        {
+          "lvl": 0,
+          "text": "주의: 이미 앱/시뮬레이터 native HTTP cache에 저장된 stale 404는 별도 cache clear가 필요할 수 있다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-013",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "prod 배포 도메인/환경 확정 + clean 재배포 (Android 우선 출시)",
+      "done": false,
+      "note": "배포 인스턴스가 소스와 drift(stale) — assetlinks/AASA 최신본 미서빙. prod 도메인(현 `workey-api.itwilllab.kro.kr` 무료 DNS vs `api.workey.app`...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 배포 인스턴스가 소스와 drift(stale) — assetlinks/AASA 최신본 미서빙. prod 도메인(현 `workey-api.itwilllab.kro.kr` 무료 DNS vs `api.workey.app`) 확정 + DNS/TLS + prod 시크릿(Firebase Admin/Kakao) 점검 후 clean 재배포 필요."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 확정 prod 도메인에서 최신 소스 clean 재배포, `/v3/api-docs` 200 + assetlinks/AASA 최신본 서빙 확인."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-009",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P1",
+      "title": "`scheduleId` 기반 schedule header/detail 계약 정리",
+      "done": true,
+      "note": "Phase 49에서 `GET /schedules/{scheduleId}`가 live OpenAPI에 노출됐다. 응답은 entries를 포함하지 않는 header 메타 8필드(`scheduleId`, `storeId`...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: Phase 49에서 `GET /schedules/{scheduleId}`가 live OpenAPI에 노출됐다. 응답은 entries를 포함하지 않는 header 메타 8필드(`scheduleId`, `storeId`, `year`, `month`, `status`, `createdAt`, `updatedAt`, `memberCount`)이며, entries는 기존 `GET /schedules/{scheduleId}/entries` 분리 계약을 유지한다."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: 2026-06-16 14:45 KST live OpenAPI paths 64개 중 `/schedules/{scheduleId}` GET 존재. `ScheduleHeaderControllerTest`는 8-field 응답을, `ScheduleHeaderControllerBOLATest` / `StoreScopedBOLAMatrixTest`는 wrong-store 접근 403을 고정한다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: scheduleId만으로 상세 화면 진입에 필요한 header 메타를 조회하고, entries는 별도 endpoint로 조회하는 계약으로 확정한다. full detail 단일 응답으로 합치지 않는 것은 Phase 49 D-11 결정이다."
+        },
+        {
+          "lvl": 0,
+          "text": "프론트 후속: `ScheduleAdjustScreen` / `ScheduleHistoryDetailScreen`이 월별 조회 우회 대신 header+entries 조합을 쓰도록 별도 FE 작업이 필요하다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-011",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P1",
+      "title": "직원 조회 응답에 관리자 본인 식별 필드 추가",
+      "done": true,
+      "note": "Phase 49에서 `EmployeeResponse.isCurrentAdmin` boolean 필드가 추가됐다. `EmployeeResponseMapper`가 callerMemberId와 row의 memberId를...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: Phase 49에서 `EmployeeResponse.isCurrentAdmin` boolean 필드가 추가됐다. `EmployeeResponseMapper`가 callerMemberId와 row의 memberId를 비교해 ADMIN 본인 row만 `true`로 계산하고, EMPLOYEE caller 및 POST 응답은 항상 `false`다."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: `EmployeeResponseMapperIsCurrentAdminTest`가 ADMIN 본인/타인/EMPLOYEE false 케이스를 고정한다. `EmployeeController.list()`와 `MeController.getMyEmployee()` 호출부도 caller 컨텍스트 전달 방식으로 정리됐다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원 목록/상세 조회 응답에 합의된 boolean 필드가 OpenAPI에 노출되고, 로그인 관리자와 연결된 직원만 해당 값이 `true`로 내려오는 테스트/검증이 있다."
+        },
+        {
+          "lvl": 0,
+          "text": "프론트 후속: MVP-FE-012에서 이 필드를 사용해 팀 현황 UI 분기를 구현해야 한다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-012",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P2",
+      "title": "iOS 실제 FCM 푸시 수신 evidence (Android 우선 출시 후 후속)",
+      "done": false,
+      "note": "backend FCM 경로 구현 완료, Android advisory receipt 확보됨(MVP-BE-002). iOS receipt만 Apple Developer 계정/APNs 인증키 미보유로 미수집.",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: backend FCM 경로 구현 완료, Android advisory receipt 확보됨(MVP-BE-002). iOS receipt만 Apple Developer 계정/APNs 인증키 미보유로 미수집."
+        },
+        {
+          "lvl": 0,
+          "text": "비고: 프로덕션 **강한 blocker 아님** — Android 우선 서비스 가능. iOS 출시 시점에 계정 확보 후 처리."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 계정 확보 후 iOS 실기기 1건 이상 실제 FCM receipt 기록."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-007",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P2",
+      "title": "Phase 46.1 store-scoped BOLA 감사·적용",
+      "done": true,
+      "note": "완료. `46.1-VERIFICATION.md` 기준 19/19 must-haves verified, `46.1-HUMAN-UAT.md` 기준 live UAT 13/13 PASS.",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 완료. `46.1-VERIFICATION.md` 기준 19/19 must-haves verified, `46.1-HUMAN-UAT.md` 기준 live UAT 13/13 PASS."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: wrong-store `/stores`, `/employees`, `/schedules`, export, closed-days, day-off, swap, matrix 모두 403 계열 표준 error로 수렴. frontend grep도 legacy `STORE_ACCESS_DENIED` 의존 0건 확인."
+        },
+        {
+          "lvl": 0,
+          "text": "후속: 신규 endpoint 추가 시 `docs/api-security-checklist.md` hook 유지."
+        }
+      ]
+    },
+    {
+      "id": "MVP-BE-010",
+      "track": "MVP",
+      "scope": "BE",
+      "priority": "P2",
+      "title": "dev access token 24h 백도어 편의 설정 cleanup",
+      "done": true,
+      "note": "2026-06-02 15:12 KST 기준 `application-dev.yml`에 `auth.access-token-expiry-minutes` override, `1440`, `/dev/token`, 백도어 주석...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 2026-06-02 15:12 KST 기준 `application-dev.yml`에 `auth.access-token-expiry-minutes` override, `1440`, `/dev/token`, 백도어 주석이 없다."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: `application.yml`의 `auth.access-token-expiry-minutes: 30`만 남아 dev profile이 base 30분 설정을 상속한다."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: `search_files` 기준 `access-token-expiry-minutes|dev/token|백도어|1440` 검색 결과는 `application.yml`의 30분 설정뿐이다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-001",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "`SettingsScreen` 회원 탈퇴 처리 정리",
+      "done": true,
+      "note": "`ENDPOINTS.me.account = '/me'`, `apiClient.delete('/me')` 호출 계약이 백엔드 Phase 49와 일치한다. 2026-06-16 live OpenAPI `/me` path에...",
+      "deps": "MVP-BE-005 완료",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: `ENDPOINTS.me.account = '/me'`, `apiClient.delete('/me')` 호출 계약이 백엔드 Phase 49와 일치한다. 2026-06-16 live OpenAPI `/me` path에 `DELETE`가 노출되고, 무인증 `DELETE /me`는 401 JSON으로 응답한다."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: `SettingsScreen.tsx` 탈퇴 flow는 `apiClient.delete(ENDPOINTS.me.account)`를 유지한다. 백엔드 `MeWithdrawalController @DeleteMapping(\"/me\")`와 `MeControllerDeleteMeTest`가 계약을 고정한다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 백엔드 API 추가에 맞춰 유지하거나, MVP에서 버튼/호출 제거·비활성화."
+        },
+        {
+          "lvl": 0,
+          "text": "의존성: MVP-BE-005 완료."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-002",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "FCM 실기기 검증 완료 (Android advisory)",
+      "done": true,
+      "note": "`FcmMessagingBridge`가 인증 상태 이후 OS push permission 요청, 현재 FCM token 등록(`PATCH /me/fcm-token`), token refresh 구독, foregrou...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: `FcmMessagingBridge`가 인증 상태 이후 OS push permission 요청, 현재 FCM token 등록(`PATCH /me/fcm-token`), token refresh 구독, foreground toast, notification tap/initial-open navigation, background handler를 연결했다. 2026-06-17 Android 에뮬레이터에서 backend-sent `DAY_OFF_REQUESTED` 알림의 shade/background heads-up/foreground heads-up 3종 수신을 확인하고 evidence 문서화(`frontend/.planning/evidence/MVP-FE-002-fcm-android/`). iOS 실기기 receipt는 Apple Developer 계정 미보유로 MVP-FE-013으로 분리(프로덕션 강한 blocker 아님, Android 우선 출시 가능)."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: Android advisory receipt가 evidence로 문서화된다(기기/계정/알림type/시간/수신형태). iOS 실기기 receipt는 MVP-FE-013으로 이관."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-003",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "iOS TTI 실측 evidence 기록 — 완료(2026-06-24)",
+      "done": true,
+      "note": "iOS Measurement 빌드로 TTI 실측 완료(2026-06-24). cache-hit 540ms(≤800 ✅) / cache-miss 999·1072ms(≤1500 ✅). 인증 재실행 기준(콜드 신규설치+로...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: iOS Measurement 빌드로 TTI 실측 완료(2026-06-24). cache-hit 540ms(≤800 ✅) / cache-miss 999·1072ms(≤1500 ✅). 인증 재실행 기준(콜드 신규설치+로그인은 사람 로그인 시간이 섞여 무효라 제외). cache-hit은 home-summary를 MMKV에 persist(staleTime 60s)해 마운트 시 fetch 생략(`isFetchedAfterMount=false`)으로 달성. evidence: `frontend/.planning/evidence/MVP-FE-003-ios-tti/MEASUREMENT.md`([TTI] 원문 3건). 커밋 `de9293e`(측정 하니스+evidence)·`786d804`(cache-hit MMKV seed)·`01b6df1`(auth 영속 자동Home/refresh 배열언랩/라우팅갭). 측정환경 iPhone 17 Pro 시뮬 / iOS 26.4 / backend 9090."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: iOS cache hit, cache miss 측정값이 기록되고 기준을 만족한다. ✅"
+        },
+        {
+          "lvl": 0,
+          "text": "기준: cache hit <= 800ms, cache miss <= 1500ms."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-004",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "GitHub Actions 첫 guard 실행 evidence 기록 — 완료(2026-06-23)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "완료(2026-06-23 검증): `pr-guards.yml`에 `push: branches: [main]` 트리거 추가(commit `d35818d`) 후 main push로 GitHub Actions `PR Guards / release-guards` run #1 **success(59s)**. `npm ci` → `npm run guard:release`(R-1/R-2/R-3/R-6) 전 스텝 green. evidence: `.planning/evidence/MVP-FE-004-ci-guard-run/run1-pr-guards-green.png` + run URL https://github.com/devwelllab/workey-app/actions/runs/28008900059 (job 82897156682)."
+        },
+        {
+          "lvl": 0,
+          "text": "비고: evidence run은 push 이벤트 기준(동일 `release-guards` job). `pull_request` 트리거 유지 — PR 머지 게이트도 같은 job 실행."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: GitHub Actions에서 실제 guard가 실행된 결과가 기록된다. ✅"
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-018",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "Android release 키스토어 생성 + 서명 배선 (Play 배포 하드 blocker)",
+      "done": false,
+      "note": "`android/app/build.gradle:118` release가 debug 키스토어로 서명 중(주석 \"In production, you need to generate your own keystore\"). 전용...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: `android/app/build.gradle:118` release가 debug 키스토어로 서명 중(주석 \"In production, you need to generate your own keystore\"). 전용 release 키스토어 생성 후 서명 배선 필요. 비밀번호는 env/gradle.properties(git-ignored) 주입, 하드코딩 금지."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: release AAB/APK가 전용 release 키로 서명되고 Play Console 업로드 가능."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-019",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "`.env.production` 생성 (release 빌드 API_BASE_URL)",
+      "done": false,
+      "note": "release 빌드가 `.env.production` 참조(`android/app/build.gradle:12`)하나 파일 부재(dev/android.development/measurement만 존재) → relea...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: release 빌드가 `.env.production` 참조(`android/app/build.gradle:12`)하나 파일 부재(dev/android.development/measurement만 존재) → release 빌드 API_BASE_URL 미비. prod 백엔드 URL 지정 필요."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: `.env.production`에 prod API_BASE_URL 설정, release 빌드가 prod 백엔드로 호출."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-020",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "assetlinks release SHA256 교체 (딥링크 자동오픈)",
+      "done": false,
+      "note": "배포 assetlinks가 debug 키스토어 SHA256(EMP-FE-002 잔여). MVP-FE-018 release 키 지문으로 교체해야 Android App Links 자동오픈 동작.",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 배포 assetlinks가 debug 키스토어 SHA256(EMP-FE-002 잔여). MVP-FE-018 release 키 지문으로 교체해야 Android App Links 자동오픈 동작."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 배포 assetlinks.json이 release 키 SHA256을 서빙하고 실기기 https 링크 자동오픈 검증."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-005",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "알림 설정 화면 서버 GET/PATCH 연동 (푸시 실수신/FCM 완료 아님)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확인: `NotificationSettingsScreen`이 `useNotificationSettingsQuery` / `useUpdateNotificationCategorySetting`을 사용하고 `GET/PATCH /me/notification-settings`를 호출한다."
+        },
+        {
+          "lvl": 0,
+          "text": "근거 파일: `src/features/settings/screens/NotificationSettingsScreen.tsx`, `src/features/notifications/api/notificationSettings.ts`, `src/shared/api/endpoints.ts`."
+        },
+        {
+          "lvl": 0,
+          "text": "범위 제외: 2026-06-01 추가된 `근무중 알림끄기` UI는 현재 UI-only local state이며 서버 `PATCH /me/notification-settings`에는 기존 카테고리 토글만 유지한다."
+        },
+        {
+          "lvl": 0,
+          "text": "범위 제외: FCM 실수신, OS push permission, 직원 알림 인박스, 직원 대상 푸시 검증은 각각 별도 미완료 TODO로 남긴다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-006",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "서버 logout 연동",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확인: `SettingsScreen`이 refreshToken 존재 시 `POST /auth/logout` 호출 후 local clear를 수행한다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 로그아웃 시 서버 logout 호출 후 local clear를 수행한다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-010",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "Backend Phase 998 전제의 FCM 프론트 live path wiring",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확인: `FcmMessagingBridge`가 auth-ready 이후 permission/token registration/onTokenRefresh/foreground/open/background path를 연결했다."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: Frontend SSOT 기준 focused FCM/App/Notifications/NotificationSettings Jest 6 suites / 27 tests와 `npx tsc --noEmit` 통과."
+        },
+        {
+          "lvl": 0,
+          "text": "범위 제외: 실제 device receipt는 MVP-FE-002에서 추적한다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-011",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "월별 스케줄 stale 404 클라이언트 방어",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확인: 월별 스케줄 GET은 URL cache-buster 없이 `Cache-Control: no-cache`, `Pragma: no-cache` 요청 헤더를 붙이고, `SCHEDULE_NOT_FOUND` 404는 query error가 아닌 스케줄 없음(`null`)으로 처리하며 해당 `(storeId, year, month)` ETag/body cache를 삭제한다."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: 304인데 로컬 body가 없으면 cache miss로 보고 key 삭제 후 `If-None-Match` 없이 재조회한다. 생성 성공 시 같은 월 monthly ETag cache 삭제 + monthly query `refetchType: all` invalidation을 수행한다."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: `scheduleQueries.etag.test.tsx`, `queryClient.test.ts`, `interceptor.test.ts`, `ScheduleHistoryScreen.test.tsx`, `ScheduleAdjustScreen.test.tsx`, `TeamScheduleScreen.test.tsx`, `npx tsc --noEmit` 통과."
+        },
+        {
+          "lvl": 0,
+          "text": "범위 제외: 근본 해결은 MVP-BE-008의 ErrorResponse no-store/no-ETag 보장이다. 기존 native HTTP cache에 남은 stale 404는 앱/시뮬레이터 cache clear가 필요할 수 있다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-012",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "팀 현황 관리자 본인 식별값 기반 UI 분기 반영",
+      "done": true,
+      "note": "백엔드 `EmployeeResponse.isCurrentAdmin` boolean 노출(live OpenAPI 확인). 프론트 구현 완료 — `rosterQueries.ts` 정규화, `RosterScreen` 본인...",
+      "deps": "MVP-BE-011 완료",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 백엔드 `EmployeeResponse.isCurrentAdmin` boolean 노출(live OpenAPI 확인). 프론트 구현 완료 — `rosterQueries.ts` 정규화, `RosterScreen` 본인 chip·카카오/삭제 숨김·제외 self 분기에 `isCurrentAdmin` 우선 사용(`/me/employee` id 비교는 구버전/예외 응답 fallback), `HomeScreen` 팀 현황 self chip. 2026-06-16 16:23 KST 테스트 통과: `HomeScreen.test.tsx`/`RosterScreen.test.tsx`/`deriveRosterSections.test.ts` 3 suites 47 tests PASS, `tsc --noEmit` 통과."
+        },
+        {
+          "lvl": 0,
+          "text": "주의: 어떤 화면/요소를 표시하거나 숨길지는 추후 별도 논의 후 확정한다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 합의된 화면/요소에 대해 관리자 본인 여부 분기가 구현되고 테스트된다."
+        },
+        {
+          "lvl": 0,
+          "text": "의존성: MVP-BE-011 완료."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-013",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P2",
+      "title": "iOS 실기기 FCM push receipt (Android 우선 출시 후 후속)",
+      "done": false,
+      "note": "FE FCM live path 구현 완료, Android(에뮬레이터) advisory 검증됨(MVP-FE-002). iOS 실기기 receipt만 Apple Developer 계정 미보유 blocker.",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: FE FCM live path 구현 완료, Android(에뮬레이터) advisory 검증됨(MVP-FE-002). iOS 실기기 receipt만 Apple Developer 계정 미보유 blocker."
+        },
+        {
+          "lvl": 0,
+          "text": "비고: 프로덕션 **강한 blocker 아님** — Android 우선 서비스 가능. iOS 출시 시점에 계정 확보 후 처리."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 계정 확보 후 iOS 실기기 push receipt가 launch evidence로 문서화된다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-007",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P2",
+      "title": "서버 export API 연결 여부 결정 및 반영",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: `GET /schedules/{scheduleId}/export/png`, `/xlsx`, `/ics`."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: `scheduleExport.ts`가 `ENDPOINTS.schedules.exportPng/exportXlsx/exportIcs`를 사용한다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 서버 export를 연결하거나 MVP scope 밖으로 명시한다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-008",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P2",
+      "title": "schedule membership API 연결 여부 결정 및 반영",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: `POST /schedules/{scheduleId}/members`, `DELETE /schedules/{scheduleId}/members/{employeeId}`."
+        },
+        {
+          "lvl": 0,
+          "text": "확인: `RosterScreen`이 현재 월 `useCurrentSchedule`로 실제 `scheduleId`를 얻고 `useAddScheduleMember` / `useRemoveScheduleMember`를 호출한다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: scheduleId 기반 서버 연동 또는 scope-out이 명시된다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-009",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "P2",
+      "title": "VC collection toggle 연결 여부 결정 및 반영",
+      "done": true,
+      "note": "연결 결정은 “스케줄 생성 직전 next month 휴무 수집 lock”으로 반영됐다. `GenerateScreen`에서 대상 월이 KST 다음 달이면 `PATCH /stores/{storeId}/vc-collect...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: `PATCH /stores/{storeId}/vc-collection`."
+        },
+        {
+          "lvl": 0,
+          "text": "현재 상태: 연결 결정은 “스케줄 생성 직전 next month 휴무 수집 lock”으로 반영됐다. `GenerateScreen`에서 대상 월이 KST 다음 달이면 `PATCH /stores/{storeId}/vc-collection { active: true }` 후 `VacationCollect`로 진입하고, 현재/다다음 달은 호출하지 않는다. `VacationCollectScreen`은 생성 없이 이탈하면 `{ active: false }`를 호출하고, 생성 성공 시에는 백엔드 생성 완료가 lock을 닫는 전제로 프론트 home summary cache의 `vcCollectActive`를 false로 갱신한다."
+        },
+        {
+          "lvl": 0,
+          "text": "근거 파일: `src/shared/api/endpoints.ts`, `src/features/home/api/homeSummary.ts`, `src/features/schedule/api/scheduleQueries.ts`, `src/features/schedule/lib/scheduleGenerateContext.ts`, `src/features/schedule/screens/GenerateScreen.tsx`, `src/features/schedule/screens/VacationCollectScreen.tsx`."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: 2026-06-02 focused Jest `GenerateScreen.test.tsx`, `VacationCollectScreen.test.tsx`, `scheduleQueries.etag.test.tsx` 3 suites / 27 tests passed. 변경은 `workeyApp` commit `7047c1f feat(schedule): lock VC collection during next-month flow`에 포함됐다."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-014",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "VERIFY",
+      "title": "Export 화면 디자인 정합",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확인: 출력 시트가 xlsx·ics를 standard-only info 시트 뒤로 소프트게이팅. `ExportStandardSheet` 추가."
+        },
+        {
+          "lvl": 0,
+          "text": "커밋: `4f4b72b feat(export): soft-gate xlsx·ics behind standard-only info sheet` (unpushed)."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: overseer read-only 교차검증(코드 대조)."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-015",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "VERIFY",
+      "title": "Adjust 화면 디자인 정합",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확인: 충돌 warning-tone 배너, undo 토스트, 1회성 코치마크, 충돌 칩 ⋮ 이동 진입점 반영."
+        },
+        {
+          "lvl": 0,
+          "text": "커밋: `01c20b3 feat(adjust): warn-tone conflict banner, undo toast, one-time coachmark, conflict chip move affordance` (unpushed)."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: overseer read-only 교차검증(코드 대조)."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-016",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "VERIFY",
+      "title": "Settings 화면 디자인 정합",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확인: 설정 '출력' row가 `ScheduleHistory`를 경유해 Export로 진입하도록 라우팅."
+        },
+        {
+          "lvl": 0,
+          "text": "커밋: `dcacb17 feat(settings): route export entry through schedule history to Export` (unpushed)."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: overseer read-only 교차검증(코드 대조)."
+        }
+      ]
+    },
+    {
+      "id": "MVP-FE-017",
+      "track": "MVP",
+      "scope": "FE",
+      "priority": "VERIFY",
+      "title": "VC(휴무 수합) 화면 디자인 정합",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확인: `DAY_OFF_CONFLICT` snap `['30%','60%','92%']`→`['30%','92%']` peek/full 2단 토글. 도달불가 `dayOffConflict && '60%'` backdrop 사문 분기(`BottomSheetFrame:167`) 제거. `VacationCollectScreen`·`DayOffConflictSheet` 본체 무손."
+        },
+        {
+          "lvl": 0,
+          "text": "커밋: `83d549a feat(vacation-collect): DayOffConflict sheet peek/full 2-snap (unused component tidy)` (unpushed)."
+        },
+        {
+          "lvl": 0,
+          "text": "검증: overseer 독립검증 — affected Jest 4/4 PASS(peek/full 토글 포함), `tsc` 0, eslint 0, 제거 경로 단언 테스트 0건. full `jest --runInBand`는 환경 hang이라 affected+정적분석으로 대체."
+        }
+      ]
+    },
+    {
+      "id": "EMP-BE-001",
+      "track": "EMP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "직원 본인 휴무 신청 목록 API 추가 또는 대체 계약 확정 — 완료(2026-07-01)",
+      "done": true,
+      "note": "`GET /me/day-off-requests` 구현·검증 완료(2026-07-01). live OpenAPI 노출 확인 + 무인증 401. 본인 employeeId 자연격리(store scope 의존 없음), 전...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: `GET /me/day-off-requests` 구현·검증 완료(2026-07-01). live OpenAPI 노출 확인 + 무인증 401. 본인 employeeId 자연격리(store scope 의존 없음), 전 status 반환(requested_date DESC). `GetMySwapRequestHistoryUseCase` 거울 패턴(헥사고날: MeController + UseCase + out-port loadByEmployeeId + jooq adapter, 파라미터 바인딩). 테스트 149 pass(단위 3 + 슬라이스 2 포함). Flyway 마이그레이션 0(day_off_requests 재사용)."
+        },
+        {
+          "lvl": 0,
+          "text": "L4 인증 검증(2026-07-01): member37 EMPLOYEE → 200 {success,result:[...]}(단일배열 flatten), member16 무소속 → 404 EMPLOYEE_NOT_LINKED. 라이브 curl."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: `GET /me/day-off-requests` 또는 동등한 `/me` scope 계약이 OpenAPI에 존재하고 검증된다. ✅"
+        }
+      ]
+    },
+    {
+      "id": "EMP-BE-002",
+      "track": "EMP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "직원 휴무 신청 상세/취소 UX용 `/me` scope 정리 — 완료(2026-07-01)",
+      "done": true,
+      "note": "조회는 EMP-BE-001의 `GET /me/day-off-requests`로 충족(본인 목록+상태). 취소 `DELETE /day-off-requests/{requestId}`는 이미 본인 전용(SecurityCo...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 조회는 EMP-BE-001의 `GET /me/day-off-requests`로 충족(본인 목록+상태). 취소 `DELETE /day-off-requests/{requestId}`는 이미 본인 전용(SecurityConfig EMPLOYEE + UseCase self-ownership 가드 + PENDING-only) — 진단으로 확인, 무변경. 상세 endpoint는 목록 item이 도메인 전 필드(id/employeeId/employeeName/requestedDate/status/reason) 포함이라 불필요 판정(YAGNI)."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원 앱 화면이 관리자/store scope에 의존하지 않고 본인 휴무 신청 상태를 표시할 수 있다. ✅"
+        }
+      ]
+    },
+    {
+      "id": "EMP-BE-003",
+      "track": "EMP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "근무 교환 상대 직원 수락/거절 정책/API 확정 — 완료(scope-out, 2026-07-04)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "확정(2026-07-04): 상대 수락 단계 없음 — 교환 당사자 간 사전 합의된 것으로 보고 관리자 승인만으로 확정. 현재 API(Create/Cancel EMPLOYEE + Approve/Reject ADMIN)가 정책과 정합 → 백엔드 무변경. 기획서 L252/L309 2단계로 수정 완료. 추후 '상대 수락' 단계 추가 검토 예정."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 정책이 확정되고 필요한 경우 OpenAPI에 endpoint가 추가된다. → 정책 확정(상대 수락 제외), endpoint 추가 불필요."
+        }
+      ]
+    },
+    {
+      "id": "EMP-BE-008",
+      "track": "EMP",
+      "scope": "BE",
+      "priority": "P0",
+      "title": "무소속 EMPLOYEE 역할 재선택(role→PENDING) 엔드포인트 — Phase 47 (완료)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "완료(2026-06-23 검증): **`POST /me/role-reset`** 라이브 OpenAPI 노출 확인(L2 ✅, 65 paths). BE 구현·커밋(`3b4618e9` + 47-01/02 + `CR-01` 가드 fix + `WR-03`), WebMvcTest(EMPLOYEE 200 / PENDING·ADMIN 403 / 비인증 401), 백엔드 SSOT §558-577 반영. FE도 `/me/role-reset`로 정합."
+        },
+        {
+          "lvl": 0,
+          "text": "필요한 이유: 매장 소속 잃은 EMPLOYEE(INVITE_PENDING/STORE_REMOVED/RESTORE_FAILED)가 역할 재선택(ADMIN 전환 포함)으로 림보 탈출."
+        },
+        {
+          "lvl": 0,
+          "text": "계약(확정): 신규 리셋 엔드포인트가 `Member.role → PENDING` + 기존 refresh token revoke + 새 JWT 발급. 가드 = 적격 무소속 상태만, RESTORE_PENDING(활성 복구 토큰)·활성 매장 보유 시 409. onboarding-status에 \"재선택 가능\" 신호 추가. 이후 기존 select-role 재사용. 트리거는 회원 명시적 액션만(스케줄러 자동 리셋 없음)."
+        },
+        {
+          "lvl": 0,
+          "text": "계약(확정 — Phase 47 구현 후): 엔드포인트 = `POST /me/role-reset`, 응답 `TokenResponse`(accessToken/refreshToken/expiresIn), 가드 409(RESTORE_PENDING·활성매장·비EMPLOYEE), EMPLOYEE 인가 first-match(`/me/**` 위). (잔존 access JWT ≤30분 수용 위험은 설계상 감수.)"
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 리셋 엔드포인트 + onboarding-status 신호가 OpenAPI에 존재하고, 가드(409 케이스)·refresh revoke·권한상승 audit가 검증된다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-BE-004",
+      "track": "EMP",
+      "scope": "BE",
+      "priority": "P1",
+      "title": "초대 링크 consume flow 백엔드 E2E 검증",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 존재 API: `POST /employees/{employeeId}/invite`, `GET /invite/{token}/preview`, `POST /auth/kakao/token-login` with `inviteToken`."
+        },
+        {
+          "lvl": 0,
+          "text": "최신 상태: Phase 46.2로 Kakao SDK accessToken 기반 `POST /auth/kakao/token-login`은 완료되고 human UAT PASS. 다만 초대 token 발급 → preview → token-login inviteToken consume → employee linked까지의 직원 초대 E2E는 별도 확인이 필요하다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 초대 토큰 발급 → preview → Kakao token-login inviteToken consume → employee linked까지 검증된다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-BE-005",
+      "track": "EMP",
+      "scope": "BE",
+      "priority": "P1",
+      "title": "직원 알림 실푸시 검증",
+      "done": false,
+      "note": "백엔드 Phase 998/998.1 및 프론트 FCM live path에 의존.",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 백엔드 Phase 998/998.1 및 프론트 FCM live path에 의존."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원 대상 알림이 inbox + FCM 실수신으로 검증된다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-BE-006",
+      "track": "EMP",
+      "scope": "BE",
+      "priority": "P1",
+      "title": "복구 요청 lifecycle API 직원 앱 기준 검증 — 완료(2026-07-06, 교차검증: live OpenAPI `POST /me/request-restore`·`/restore/{token}/preview·consume·reject` ↔ FE onboardingStatus 매핑 STORE_REMOVED→RemovedNotice(POST request-restore)/RESTORE_PENDING→RecoveryRequested/RESTORE_FAILED→RecoveryDeclined 정합. live E2E[removed 로그인→request→pending/failed 흐름]는 미실시)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 API: `POST /me/request-restore`, restore preview/consume/reject 계열 존재."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원 앱 화면과 연결했을 때 RESTORE_PENDING/RESTORE_FAILED(+STORE_REMOVED) 상태 분기가 검증된다. (실계약 정정 2026-07-06: APPROVED/REJECTED/EXPIRED 상태 없음 — onboarding-status=RESTORE_PENDING|RESTORE_FAILED, restore 토큰 preview=VALID|EXPIRED|CONSUMED|NOT_FOUND)"
+        }
+      ]
+    },
+    {
+      "id": "EMP-BE-007",
+      "track": "EMP",
+      "scope": "BE",
+      "priority": "P2",
+      "title": "직원 store conflict / store switch 정책 검증 — 완료(2026-07-06, 교차검증: live OpenAPI `POST /me/confirm-store-switch {accept:boolean}` + onboarding-status STORE_CONFLICT의 currentStore/pendingStore ↔ FE StoreConflictScreen·confirmStoreSwitch.ts(post {accept}) 정합. FE-014 done+테스트 3 suites/6 PASS. live E2E 흐름은 미실시)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 API: `POST /me/confirm-store-switch` 존재."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원 앱 conflict 화면 기준으로 정책과 API 동작이 정리되고 검증된다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-001",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "직원 앱 Release 2 화면/상태 흐름 구현",
+      "done": true,
+      "note": "프론트 GSD Release 1/1.5 roadmap은 관리자 wedge와 launch guard 중심이며, EmployeeTabs 전체는 Release 2 별도 마일스톤으로 분리되어 있다.",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 프론트 GSD Release 1/1.5 roadmap은 관리자 wedge와 launch guard 중심이며, EmployeeTabs 전체는 Release 2 별도 마일스톤으로 분리되어 있다."
+        },
+        {
+          "lvl": 0,
+          "text": "탭 구조 정정(2026-07-01): 4탭 홈/전체스케줄/나의스케줄/설정 (design mockup Screens.jsx 확정). 관리자는 명부 대체·나의스케줄 없음, 전체스케줄=read-only(admin 조정/출력 버튼 role-gate). ※이전 \"5탭 스케줄/휴무/교환/알림/설정\"은 pm 오독(기획서 §3.4 직원 flow를 탭으로 착각) — 폐기. 방침 = shell/IA 골격(EmployeeTabs 4탭+placeholder) 먼저 → 화면 순차."
+        },
+        {
+          "lvl": 0,
+          "text": "달력 재사용(2026-07-01): mockup은 월그리드를 화면마다 복붙(7벌), 공유는 CalendarCell(Primitives.jsx) 원자뿐. RN은 <MonthCalendar> 1개로 통합(props: data/pickableRule/onCellTap/monthNav) — 나의/전체/휴무/교환 달력이 같은 골격. shell 설계 핵심 재사용 포인트."
+        },
+        {
+          "lvl": 0,
+          "text": "진행(2026-07-04): EmployeeTabs 4탭 + 홈/나의스케줄(003 done)/전체스케줄(EmployeeTeamScheduleScreen — matrix read-only 팀 근무현황, 커밋 57a4d9c) 렌더+API 연결. 잔여 = 교환(005)/알림(007)/설정(011)/온보딩. 전체 done은 잔여 완료 후."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원용 실제 탭 화면이 렌더링되고 주요 API와 연결된다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료(2026-07-10 overseer 재검증): `EmployeeTabs` 4탭 전부 실화면(홈/전체스케줄/나의스케줄/설정)이며 API 배선 확인 — Home(`useNotifications`·`useMyEmployee`·`useMyDayOffRequests`·`useMySwapRequests`·`useCancel*`), TeamSchedule(`useTeamScheduleMatrix`), MySchedule/Settings 쿼리 배선. nav에 `_Placeholder` 미사용, mock/TODO 0. 잔여로 적혔던 교환(EMP-FE-005)/알림(EMP-FE-007)/설정(EMP-FE-011)/온보딩(EMP-FE-012) 전부 done → 완료 기준 충족. (실 카톡 발송[EMP-FE-015]은 관리자 초대 폴리시로 별건 분리, 본 umbrella와 무관.)"
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-002",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "초대 링크 deep link 처리 구현",
+      "done": false,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "흐름: invite URL 진입 → token 추출 → 로그인 전 보존 → Kakao 로그인 → `token-login`에 `inviteToken` 전달."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 앱 미설치/설치 후 진입 모두에서 초대 토큰이 유실되지 않는다."
+        },
+        {
+          "lvl": 0,
+          "text": "진행(2026-07-10) — 코드·실기기 E2E 완료, **아래 잔여 때문에 in_progress 유지**:"
+        },
+        {
+          "lvl": 1,
+          "text": "구현: RN linking(`invite/:token`→InvitePreview, prefixes `workey-api.itwilllab.kro.kr`) + inviteToken mmkvPersist(kill 생존) + `kakaoLoginForJwt`→`token-login` inviteToken 연결 + 네이티브 config(iOS Associated Domains / Android intent-filter autoVerify) + **로그인-상태 브랜치**(로그인 직원 딥링크→`POST /me/invite/consume`→onboarding-status STORE_CONFLICT→`StoreConflictScreen`). FE 커밋 `fd8053a`(딥링크)·`82a1bb1`(InvitePreview fix). BE 커밋 `566bb5d0`(도메인 workey-api.itwilllab.kro.kr)·`bbffa72d`(`POST /me/invite/consume`, InviteTokenConsumer 공용추출, 로그인 회귀 0)·`57bdc688`(assetlinks Android package+debug SHA256). 전부 unpushed."
+        },
+        {
+          "lvl": 1,
+          "text": "검증: Maestro 실기기 E2E(Pixel_8) 2 시나리오 PASS — ①로그아웃→InvitePreview VALID 렌더 ②로그인 직원→consume 200 CONFLICT→StoreConflict \"매장 바꿀까요\" 렌더(기획 §3.2 케이스5 정합). E2E가 InvitePreview의 `CommonResponse.result` 배열 파싱 실버그(잠복 EMP-FE-010) 노출→fix."
+        },
+        {
+          "lvl": 1,
+          "text": "**잔여(다음 할 일) — deferred**:"
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-003",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "직원 MySchedule 화면 구현 — 완료(2026-07-04)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: `GET /me/schedules`, `GET /me/schedules/history`, `GET /me/schedules/history/years`."
+        },
+        {
+          "lvl": 0,
+          "text": "완료(2026-07-04 검증): 나의스케줄 = 개인 이번달/다음달(viewIndex 토글, includeNext) + 팀 매트릭스(GET /stores/{id}/schedules/{y}/{m}/matrix — 근무자/휴무자 인라인 확장) + 홈 '다음 휴무' 카드. 커밋 466cfe0. overseer 스샷·tsc 재검증."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원이 본인 이번 달/다음 달 스케줄을 볼 수 있다. (※이력=별도 defer — 직원 MySchedule은 current+next로 클램프, ScheduleHistoryScreen은 admin 전용. 직원 이력 진입점은 향후 항목으로 분리.)"
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-004",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "직원 휴무 신청/취소/내역 화면 구현 — 완료(2026-07-05)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: 신청 생성/취소 + EMP-BE-001의 본인 신청 목록 API."
+        },
+        {
+          "lvl": 0,
+          "text": "계획 완료(2026-07-01): endpoints→훅→화면→네비. 결정 = 날짜선택 공용 달력 재사용 / EXPIRED disabled 회색 / 응답 result 단일배열(라이브 확정). host 정정(2026-07-01): 휴무 탭 없음 — 홈 '다음 달 휴무 미리 신청' CTA + 나의스케줄 '이번 달 휴무 신청' 버튼 → LeaveRequestSheet(바텀시트, 1일1신청, mode next/current). 착수 대기."
+        },
+        {
+          "lvl": 0,
+          "text": "현재 상태(2026-07-04): 신청(LeaveRequestFlow — 홈 '다음 달 휴무 미리 신청' CTA + 나의스케줄 '이번 달 휴무 신청' 버튼) + 내역/상태(홈 '내 휴무 신청' 카드, GET /me/day-off-requests, 상태 pill) 구현·검증. 커밋 466cfe0/077a1fd. 취소 UI = option(a) 디자인대로 생략(백엔드 DELETE /day-off-requests/{id} 존재하나 앱 미노출) → 취소 UI 추가 시 done. 현재 in_progress."
+        },
+        {
+          "lvl": 0,
+          "text": "완료(2026-07-05): 취소 UI 추가(DELETE /day-off-requests/{id} 물리삭제 + Alert destructive, `useCancelDayOffRequest`) + 전용 내역 화면(`EmployeeDayOffHistoryScreen`, status 클라이언트 필터) 구현. 홈 '내 휴무 신청' 카드 취소 버튼·'전체 보기' nav, 공용 `DayOffRequestRow`. 커밋 `e74be34`, origin push. → 신청/취소/상태확인 3요건 충족."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원이 휴무 신청, 취소, 상태 확인을 할 수 있다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-005",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "직원 근무 교환 신청/내역 화면 구현 — 완료(2026-07-05)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: `POST /schedule-entries/swap-requests`, `GET /me/swap-requests`, `DELETE /swap-requests/{id}`."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원이 교환 신청, 취소, 내역 확인을 할 수 있다."
+        },
+        {
+          "lvl": 0,
+          "text": "완료(2026-07-05): 신청 3-step(`ShiftSwapFlow`) + 홈 \"대기중\" 카드 + 내역 화면(status 필터) + 취소(Alert destructive). 커밋 FE `401da6b`/`ffd4fda`/`5d1f2fc` + BE 2일 맞교대 `31c7290f`. TARGET 노출·전역 홈경고는 후속."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-006",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "교환 상대 수락/거절 UI 구현 또는 scope-out — scope-out(2026-07-04)",
+      "done": true,
+      "note": "",
+      "deps": "EMP-BE-003 정책/API 확정. → EMP-BE-003 = 상대 수락 없음 확정",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "의존성: EMP-BE-003 정책/API 확정. → EMP-BE-003 = 상대 수락 없음 확정."
+        },
+        {
+          "lvl": 0,
+          "text": "scope-out(2026-07-04): 상대 수락 단계가 정책상 없음 → target 승인 UI 정책상 제외. FE 구현 없음. (추후 '상대 수락' 추가 검토 시 재개.)"
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: target 승인 단계가 있으면 UI/API 연결, 없으면 정책상 제외로 명시. → 없음 → 정책상 제외 명시(충족)."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-013",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P0",
+      "title": "무소속 EMPLOYEE \"역할 다시 고르기\" 버튼/흐름 — Phase 47 (완료)",
+      "done": true,
+      "note": "",
+      "deps": "EMP-BE-008",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "완료(2026-06-23 검증): FE 버튼/시트/플로우 + 경로 `/me/role-reset` 정합(라이브 매칭). Phase47 테스트 3 suites/9 PASS(roleReselect·RemovedNoticeScreen·RecoveryScreens). (ADMIN은 대상 아님 — admin 역할 재선택은 회원 탈퇴+재가입 경로. FE 경로 수정분 커밋은 frontend-agent 위임.)"
+        },
+        {
+          "lvl": 0,
+          "text": "버튼 배치: `INVITE_PENDING 화면` / `RemovedNoticeScreen`(STORE_REMOVED) / `RecoveryDeclinedScreen`·`RecoveryExpiredScreen`(RESTORE_FAILED) = 추가. `RecoveryRequestedScreen`(RESTORE_PENDING) = 없음(\"복구 요청 보냄/대기중\"만)."
+        },
+        {
+          "lvl": 0,
+          "text": "동작: 탭 → 확인 다이얼로그(복구 영구 포기 경고) → 백엔드 역할-리셋 엔드포인트 호출 → select-role 온보딩(`ROLE_PENDING`)으로 이동."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 4개 화면 버튼 노출 / 1개(RESTORE_PENDING) 제외 + 확인 다이얼로그 + 리셋→select-role 네비가 구현·테스트된다."
+        },
+        {
+          "lvl": 0,
+          "text": "의존성: EMP-BE-008."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-007",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "직원 알림 인박스 구현 — 완료(2026-07-05, 리스트·읽음·unread 뱃지; 커밋 a0a3d95. tap 딥링크는 EMP-FE-002로 분리)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: `GET /me/notifications`, `PATCH /me/notifications/{notificationId}/read`."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원 알림 리스트, read 처리, type별 deeplink가 동작한다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-008",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "복구 요청 버튼 API 연결 — 완료(2026-07-05, 코드+계약 검증: RemovedNotice \"복구 요청하기\" 버튼→POST /me/request-restore + 성공→RecoveryRequested + 409 \"이미 요청\" + error toast, OnboardingStack `REMOVED`→RemovedNotice 라우팅 정합. live E2E[removed 로그인 흐름]는 미실시)",
+      "done": true,
+      "note": "직원 Release 2 흐름으로 남아 있다.",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: 직원 Release 2 흐름으로 남아 있다."
+        },
+        {
+          "lvl": 0,
+          "text": "대상 API: `POST /me/request-restore`."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 요청 성공/중복/만료/거절 상태별 UX가 연결된다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-009",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "관리자 Roster 초대 토큰 발급/공유 UI 연결 — 완료(2026-07-06, 토큰 발급 POST /employees/{id}/invite + deepLinkUrl clipboard 복사/공유; 커밋 8335a96. 실 카톡 공유는 INV-02 프로비저닝[JS key·도메인 whitelist·브랜드 썸네일 URL] 확보 후 Feed 템플릿으로 후속 이월)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: `POST /employees/{employeeId}/invite`."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 초대 버튼에서 실제 token/deepLinkUrl을 발급하고 공유한다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-010",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "초대 preview 화면 연결 — 완료(2026-07-06, `GET /invite/{token}/preview` → InvitePreviewScreen(AuthStack pre-auth), 4 status 분기(VALID 매장/점장/직원명/만료 + EXPIRED/CONSUMED/NOT_FOUND 안내)+loading/error, VALID CTA→Landing 진입만; 커밋 2f8472f, jest 442/442. 실 링크 진입[딥링크]은 EMP-FE-002(인프라 보류) 대기 — token route param 구동 준비됨)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 API: `GET /invite/{token}/preview`."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 초대 링크 진입 시 매장명/직원명/만료 상태를 표시한다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-014",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P1",
+      "title": "STORE_CONFLICT 매장 전환 확인 화면 구현",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "완료(2026-06-19 검증): `StoreConflictScreen` + `confirmStoreSwitch.ts`(`POST /me/confirm-store-switch {accept}`→상태 refetch) + endpoints.ts `confirmStoreSwitch` + onboardingStatus.ts `storeConflict`/`pendingStore` 스레딩 + OnboardingStack STORE_CONFLICT→`StoreConflict` 분리(INVITE_PENDING만 LinkCheck) + LinkCheck 가드 제거. 계약은 라이브 OpenAPI와 일치. 테스트 3 suites/6 tests PASS(`confirmStoreSwitch.test`·`StoreConflictScreen.test`·`onboardingStatusQuery.test`), `tsc --noEmit` 클린."
+        },
+        {
+          "lvl": 0,
+          "text": "대상 API: `POST /me/confirm-store-switch {accept}` / `GET /me/onboarding-status`의 `currentStore`·`pendingStore`."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: STORE_CONFLICT 시 현 매장 → 초대 매장 전환 확인 화면이 노출되고, [전환]=`accept:true` / [거절]=`accept:false`로 `confirm-store-switch`를 호출해 상태가 해소된다."
+        },
+        {
+          "lvl": 0,
+          "text": "관련: EMP-FE-012(온보딩 상태별 화면 정리, STORE_CONFLICT 포함)의 구체 실현 항목 / EMP-BE-007(백엔드 정책·API, 본 화면 기준으로 검증) / 의존성 EMP-FE-002(딥링크로 STORE_CONFLICT 진입)."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-011",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P2",
+      "title": "직원 설정 화면 구현 — 완료(2026-07-05, 계정카드[아바타 편집·이름 표시만]·알림설정 4토글·이용약관·개인정보·로그아웃·탈퇴; 커밋 90868a7. 근무패턴/이름편집/schedGen은 백엔드 미지원으로 제외)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "범위: 로그아웃, 알림 설정, 계정 상태, 필요 시 탈퇴/연동 해제 정책."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 직원용 settings placeholder가 실제 화면으로 대체된다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-012",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P2",
+      "title": "직원 온보딩 상태별 화면 정리 — 완료(2026-07-06, 검증-close: live onboarding-status 10 status(TERMS_PENDING/ROLE_PENDING/NAME_PENDING/STORE_MISSING/INVITE_PENDING/STORE_CONFLICT/STORE_REMOVED/RESTORE_PENDING/RESTORE_FAILED/COMPLETE) → kind → OnboardingStack 화면 라우팅+CTA 전부 정합(소스 변경 0). 매핑 전수 테스트 고정[initialRoute.test 10 status+COMPLETE admin/employee 분기+terms-guard / RootNavigator.test INVITE_PENDING]; 커밋 aed2218, jest 445/445. RecoveryExpired는 dev-preview 전용(RESTORE_EXPIRED는 알림 이벤트 타입, onboarding status 아님)으로 유지)",
+      "done": true,
+      "note": "",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "대상 상태: TERMS_PENDING, NAME_PENDING, INVITE_PENDING, STORE_CONFLICT, REMOVED/RESTORE 계열."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 각 onboarding status가 올바른 화면과 CTA로 연결된다."
+        }
+      ]
+    },
+    {
+      "id": "EMP-FE-015",
+      "track": "EMP",
+      "scope": "FE",
+      "priority": "P2",
+      "title": "관리자 초대 카카오톡 Feed 공유 실발송 (INV-02, EMP-FE-009 후속)",
+      "done": false,
+      "note": "`RosterScreen` 초대 시트의 '복사'·'보내기'가 둘 다 `Clipboard.setString(deepLinkUrl)` 링크 복사로 대체(`copyLink`, `RosterScreen.tsx:1516-15...",
+      "deps": "",
+      "detail": [
+        {
+          "lvl": 0,
+          "text": "현재 상태: `RosterScreen` 초대 시트의 '복사'·'보내기'가 둘 다 `Clipboard.setString(deepLinkUrl)` 링크 복사로 대체(`copyLink`, `RosterScreen.tsx:1516-1533`). '카카오톡 공유 미리보기' UI는 렌더되나 실제 카톡 Feed 공유·OS 네이티브 Share는 미사용."
+        },
+        {
+          "lvl": 0,
+          "text": "남은 이유: 카카오 devconsole 프로비저닝(JS key·도메인 whitelist·브랜드 썸네일 URL) 확보 후 Feed 템플릿 연동 필요."
+        },
+        {
+          "lvl": 0,
+          "text": "완료 기준: 프로비저닝 확보 후 '보내기'가 실제 카카오톡 Feed 공유(또는 OS 네이티브 Share)로 동작하고, 복사 fallback은 유지된다."
+        },
+        {
+          "lvl": 0,
+          "text": "진행(2026-07-22): 카카오 Feed 공유 배선 완료 — `RosterScreen`이 `shareFeedTemplate`(@react-native-kakao/share) 호출, url/token 부재 시 링크복사 degrade. 커밋 `ee5307b`(EMP-FE-015 배선). **iOS 빌드 선결과제였던 pod install 충돌 해소**(커밋 `5df9188`): `ee5307b`의 yarn add가 npm 락/companion 미갱신해 발생 — reanimated 4.5.2 드리프트→`~4.3.1` 복원(worklets 0.8.3 peer 충족), `@react-native-kakao` 4모듈(core/user/share/social) 2.4.5 정렬(share podspec의 `RNCKakaoSocial` 하드의존 충족). pod install exit 0(115 pods)/tsc 0. `KAKAO_NATIVE_KEY` 프로비저닝은 확보됨(.env). **잔여: 실기기 카톡 발송 receipt 미검증**(admin JWT 실호출 미확인) — 빌드 blocker 제거로 이제 테스트 가능. 체크박스 유지(`- [ ]`)."
+        }
+      ]
+    }
+  ]
+};
+/*SEED_END*/
+
+/*SYNC_START*/
+const SYNC = {
+  "MVP-FE-006": { "status": "done", "at": "2026-06-13T01:15:11+09:00" },
+  "MVP-BE-001": { "status": "done", "at": "2026-06-23T13:25:58+09:00" },
+  "MVP-BE-002": { "status": "done", "at": "2026-06-17T14:39:07+09:00" },
+  "MVP-BE-003": { "status": "done", "at": "2026-06-16T15:28:49+09:00" },
+  "MVP-BE-004": { "status": "done", "at": "2026-06-17T11:54:21+09:00" },
+  "MVP-BE-005": { "status": "done", "at": "2026-06-16T14:45:59+09:00" },
+  "MVP-BE-006": { "status": "done", "at": "2026-06-16T14:45:59+09:00" },
+  "MVP-BE-009": { "status": "done", "at": "2026-06-16T14:45:59+09:00" },
+  "MVP-BE-011": { "status": "done", "at": "2026-06-16T14:45:59+09:00" },
+  "MVP-FE-001": { "status": "done", "at": "2026-06-16T14:45:59+09:00" },
+  "MVP-FE-002": { "status": "done", "at": "2026-06-17T14:39:07+09:00" },
+  "MVP-FE-003": { "status": "done", "at": "2026-07-01T09:46:47+09:00" },
+  "MVP-FE-004": { "status": "done", "at": "2026-06-24T10:30:18+09:00" },
+  "MVP-FE-010": { "status": "done", "at": "2026-06-16T14:45:59+09:00" },
+  "MVP-FE-012": { "status": "done", "at": "2026-06-16T16:23:54+09:00" },
+  "MVP-FE-018": { "status": "in_progress", "at": "2026-08-19T16:24:09+09:00" },
+  "MVP-BE-013": { "status": "in_progress", "at": "2026-08-19T16:24:09+09:00" },
+  "MVP-BE-012": { "status": "in_progress", "at": "2026-08-30T02:29:00+09:00" },
+  "MVP-FE-013": { "status": "in_progress", "at": "2026-08-30T02:29:00+09:00" },
+  "EMP-BE-001": { "status": "done", "at": "2026-07-01T10:20:44+09:00" },
+  "EMP-BE-002": { "status": "done", "at": "2026-07-01T10:20:44+09:00" },
+  "EMP-BE-003": { "status": "done", "at": "2026-07-04T22:09:33+09:00" },
+  "EMP-BE-008": { "status": "done", "at": "2026-06-23T11:21:20+09:00" },
+  "EMP-FE-001": { "status": "done", "at": "2026-07-10T12:42:57+09:00" },
+  "EMP-FE-002": { "status": "in_progress", "at": "2026-07-10T16:51:48+09:00" },
+  "EMP-FE-008": { "status": "done", "at": "2026-07-05T18:40:00+09:00" },
+  "EMP-FE-003": { "status": "done", "at": "2026-07-04T20:10:13+09:00" },
+  "EMP-FE-004": { "status": "done", "at": "2026-07-05T15:19:44+09:00" },
+  "EMP-FE-005": { "status": "done", "at": "2026-07-05T14:32:21+09:00" },
+  "EMP-FE-006": { "status": "done", "at": "2026-07-04T22:09:33+09:00" },
+  "EMP-FE-007": { "status": "done", "at": "2026-07-05T17:25:00+09:00" },
+  "EMP-FE-011": { "status": "done", "at": "2026-07-05T18:15:00+09:00" },
+  "EMP-FE-013": { "status": "done", "at": "2026-06-23T11:21:20+09:00" },
+  "EMP-FE-014": { "status": "done", "at": "2026-06-19T01:30:32+09:00" },
+  "EMP-BE-004": { "status": "done", "at": "2026-07-05T21:44:37+09:00" },
+  "EMP-BE-006": { "status": "done", "at": "2026-07-06T01:23:08+09:00" },
+  "EMP-BE-007": { "status": "done", "at": "2026-07-06T01:23:08+09:00" },
+  "EMP-FE-009": { "status": "done", "at": "2026-07-06T00:54:34+09:00" },
+  "EMP-FE-010": { "status": "done", "at": "2026-07-06T01:58:12+09:00" },
+  "EMP-FE-012": { "status": "done", "at": "2026-07-06T03:00:38+09:00" },
+  "EMP-FE-015": { "status": "in_progress", "at": "2026-07-22T23:22:34+09:00" }
+};
+/*SYNC_END*/
+
+const DASH_VERSION = 'v1.3 (focus-reload + 모달 복원)';
+const LS_KEY = 'workey-dashboard-v1';
+const STATUSES = ['todo', 'in_progress', 'done'];
+const STATUS_LABEL = { todo: '미완료', in_progress: '진행중', done: '완료' };
+const TRACK_LABEL = { MVP: 'MVP (1순위 - 관리자 앱)', EMP: '직원앱 (2단계 - 직원 연동)' };
+const SCOPE_LABEL = { BE: '백엔드', FE: '프론트엔드' };
+
+let state = loadState();
+let activeScope = 'ALL';
+let searchQuery = '';
+let statusFilter = 'ALL';
+
+function applyFilters(items) {
+  let out = items;
+  if (statusFilter === 'open') out = out.filter(i => i.status !== 'done');
+  else if (statusFilter !== 'ALL') out = out.filter(i => i.status === statusFilter);
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    out = out.filter(i => {
+      if (i.id.toLowerCase().includes(q)) return true;
+      if (i.title.toLowerCase().includes(q)) return true;
+      if (i.note && i.note.toLowerCase().includes(q)) return true;
+      if (i.deps && i.deps.toLowerCase().includes(q)) return true;
+      if (i.detail && i.detail.some(d => d.text.toLowerCase().includes(q))) return true;
+      if (state.memos[i.id] && state.memos[i.id].toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }
+  return out;
+}
+
+function addLog(id, from, to, sync) {
+  state.log.unshift({ id, from, to, at: new Date().toISOString(), sync: !!sync });
+  if (state.log.length > 200) state.log.length = 200;
+}
+
+// SYNC 블록(에이전트가 검증 후 기록)을 localStorage에 반영
+function applySyncDirectives() {
+  if (!state.appliedSyncs) state.appliedSyncs = {};
+  let applied = 0;
+  for (const [id, d] of Object.entries(SYNC)) {
+    if (!d || !d.status || !d.at) continue;
+    if (state.appliedSyncs[id] === d.at) continue; // 이미 적용한 디렉티브
+    const seedItem = SEED.items.find(s => s.id === id);
+    if (!seedItem) { state.appliedSyncs[id] = d.at; continue; }
+    const ov = state.overrides[id];
+    // 디렉티브 이후의 사용자 수동 변경은 존중
+    if (ov && ov.updatedAt && ov.updatedAt > d.at) { state.appliedSyncs[id] = d.at; continue; }
+    const seedStatus = seedItem.done ? 'done' : 'todo';
+    const cur = ov ? ov.status : seedStatus;
+    if (cur !== d.status) {
+      addLog(id, cur, d.status, true);
+      if (d.status === seedStatus) delete state.overrides[id];
+      else state.overrides[id] = { status: d.status, baseStatus: seedStatus, updatedAt: d.at };
+      applied++;
+    }
+    state.appliedSyncs[id] = d.at;
+  }
+  saveState();
+  if (applied) setTimeout(() => toast('동기화 검증 결과 ' + applied + '건 자동 적용됨'), 150);
+}
+
+function loadState() {
+  const def = { overrides: {}, customs: [], customSeq: 1, memos: {}, log: [], appliedSyncs: {} };
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return Object.assign(def, JSON.parse(raw)); // 구버전 state에 신규 필드 보강
+  } catch (e) { /* corrupted -> start fresh */ }
+  return def;
+}
+function saveState() {
+  localStorage.setItem(LS_KEY, JSON.stringify(state));
+}
+
+// merge SEED + overrides + customs -> render list
+function getItems() {
+  const items = SEED.items.map(s => {
+    const ov = state.overrides[s.id];
+    const seedStatus = s.done ? 'done' : 'todo';
+    let status = seedStatus;
+    let mismatch = false;
+    if (ov) {
+      status = ov.status;
+      // seed changed since user last touched this item -> mismatch
+      if (ov.baseStatus !== seedStatus && ov.status !== seedStatus) mismatch = true;
+    }
+    return { ...s, status, seedStatus, mismatch, custom: false };
+  });
+  for (const c of state.customs) {
+    items.push({ ...c, mismatch: false, custom: true, seedStatus: null });
+  }
+  return items;
+}
+
+function cycleStatus(id) {
+  const seedItem = SEED.items.find(s => s.id === id);
+  if (seedItem) {
+    const seedStatus = seedItem.done ? 'done' : 'todo';
+    const cur = state.overrides[id] ? state.overrides[id].status : seedStatus;
+    const next = STATUSES[(STATUSES.indexOf(cur) + 1) % STATUSES.length];
+    if (next === seedStatus) {
+      delete state.overrides[id]; // back to seed -> no override needed
+    } else {
+      state.overrides[id] = { status: next, baseStatus: seedStatus, updatedAt: new Date().toISOString() };
+    }
+    addLog(id, cur, next);
+  } else {
+    const c = state.customs.find(x => x.id === id);
+    if (c) {
+      const next = STATUSES[(STATUSES.indexOf(c.status) + 1) % STATUSES.length];
+      addLog(id, c.status, next);
+      c.status = next;
+    }
+  }
+  saveState();
+  render();
+}
+
+function acceptSeed(id) {
+  delete state.overrides[id];
+  saveState();
+  render();
+  toast(id + ': SSOT 상태를 수용함');
+}
+
+function revertItem(id) {
+  if (state.overrides[id]) {
+    delete state.overrides[id];
+    saveState(); render();
+    toast(id + ': 시드 상태로 되돌림');
+  }
+}
+
+function deleteCustom(id) {
+  state.customs = state.customs.filter(c => c.id !== id);
+  saveState(); render();
+  toast(id + ' 삭제됨');
+}
+
+function addCustom(track, scope, priority, title, note) {
+  const id = 'CUSTOM-' + scope + '-' + String(state.customSeq).padStart(3, '0');
+  state.customSeq += 1;
+  state.customs.push({ id, track, scope, priority, title, note, deps: '', status: 'todo', createdAt: new Date().toISOString() });
+  saveState(); render();
+  toast(id + ' 추가됨');
+}
+
+// ----- rendering -----
+function pct(done, total) { return total === 0 ? 0 : Math.round(done / total * 100); }
+
+function renderSummary(items) {
+  const scopes = activeScope === 'ALL' ? ['BE', 'FE'] : [activeScope];
+  const filtered = items.filter(i => scopes.includes(i.scope));
+  const rows = [];
+  for (const track of ['MVP', 'EMP']) {
+    const ts = filtered.filter(i => i.track === track);
+    const done = ts.filter(i => i.status === 'done').length;
+    const inprog = ts.filter(i => i.status === 'in_progress').length;
+    rows.push({ label: TRACK_LABEL[track], done, inprog, total: ts.length });
+  }
+  const allDone = filtered.filter(i => i.status === 'done').length;
+  const allInprog = filtered.filter(i => i.status === 'in_progress').length;
+  rows.push({ label: '전체 (' + (activeScope === 'ALL' ? 'BE+FE' : SCOPE_LABEL[activeScope]) + ')', done: allDone, inprog: allInprog, total: filtered.length });
+
+  document.getElementById('summary').innerHTML = rows.map(r => `
+    <div class="sum-card">
+      <div class="label">
+        <span>${r.label}</span>
+        <span><span class="pct">${pct(r.done, r.total)}%</span> · ${r.done}/${r.total} 완료${r.inprog ? ' · 진행중 ' + r.inprog : ''}</span>
+      </div>
+      <div class="bar">
+        <div class="seg-done" style="width:${pct(r.done, r.total)}%"></div>
+        <div class="seg-inprog" style="width:${pct(r.inprog, r.total)}%"></div>
+      </div>
+    </div>`).join('');
+}
+
+function cardHtml(i) {
+  const badges = [];
+  badges.push(`<span class="badge st-${i.status}" data-cycle="${i.id}" title="클릭: 상태 변경">${STATUS_LABEL[i.status]}</span>`);
+  if (i.mismatch) badges.push(`<span class="badge mismatch" data-accept="${i.id}" title="SSOT 시드와 내 로컬 상태가 다름. 클릭하면 SSOT 값(${STATUS_LABEL[i.seedStatus]})을 수용.">SSOT 불일치</span>`);
+  if (i.custom) badges.push(`<span class="badge custom">직접 추가</span>`);
+  if (state.memos[i.id]) badges.push(`<span class="badge memo">메모</span>`);
+  const meta = [];
+  if (i.note) meta.push(esc(i.note));
+  if (i.deps) meta.push('의존성: ' + esc(i.deps));
+  return `
+  <div class="card ${i.status}${i.custom ? ' custom-item' : ''}" data-id="${i.id}" title="클릭: 세부사항 보기">
+    <div class="card-head">
+      <span class="card-id">${i.id}</span>
+      <span class="badges">${badges.join('')}</span>
+    </div>
+    <div class="card-title">${mdline(i.title)}</div>
+    ${meta.length ? `<div class="card-meta">${meta.join('<br>')}</div>` : ''}
+  </div>`;
+}
+
+function render() {
+  const allItems = getItems();
+  renderSummary(allItems); // 요약 바는 검색/필터와 무관하게 실제 진척 표시
+  const items = applyFilters(allItems);
+
+  const scopes = activeScope === 'ALL' ? ['BE', 'FE'] : [activeScope];
+  let html = '';
+  for (const track of ['MVP', 'EMP']) {
+    for (const scope of scopes) {
+      const group = items.filter(i => i.track === track && i.scope === scope);
+      if (!group.length) continue;
+      const done = group.filter(i => i.status === 'done').length;
+      html += `<div class="track-section">
+        <div class="track-title">${TRACK_LABEL[track]} - ${SCOPE_LABEL[scope]}</div>
+        <div class="track-sub">${done}/${group.length} 완료 (${pct(done, group.length)}%)</div>`;
+      for (const prio of ['P0', 'P1', 'P2', 'VERIFY', 'ETC']) {
+        const pg = group.filter(i => (i.priority || 'ETC') === prio);
+        if (!pg.length) continue;
+        const prioName = { P0: 'P0 - Launch Blocker', P1: 'P1 - 계약 정합 / 품질', P2: 'P2 - 후속 / 보류', VERIFY: '검증 - 디자인 정합', ETC: '기타' }[prio];
+        html += `<div class="prio-group"><div class="prio-label">${prioName}</div><div class="cards">${pg.map(cardHtml).join('')}</div></div>`;
+      }
+      html += `</div>`;
+    }
+  }
+  if (!html) html = '<div class="empty-msg">표시할 항목 없음</div>';
+  document.getElementById('content').innerHTML = html;
+
+  document.getElementById('seedInfo').textContent =
+    `시드 기준: ${SEED.generatedAt || '(시드 미생성 - generate_seed.py 실행 필요)'} · 시드 ${SEED.items.length}개 + 직접 추가 ${state.customs.length}개 · 대시보드 ${DASH_VERSION}`;
+}
+
+// ----- events -----
+document.querySelector('.tabs').addEventListener('click', e => {
+  const tab = e.target.closest('.tab');
+  if (!tab) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  activeScope = tab.dataset.scope;
+  render();
+});
+
+document.getElementById('content').addEventListener('click', e => {
+  const accept = e.target.closest('[data-accept]');
+  if (accept) { e.stopPropagation(); acceptSeed(accept.dataset.accept); return; }
+  const cycle = e.target.closest('[data-cycle]');
+  if (cycle) { e.stopPropagation(); cycleStatus(cycle.dataset.cycle); return; }
+  const card = e.target.closest('.card');
+  if (card) openModal(card.dataset.id);
+});
+
+// ----- detail modal -----
+let modalItemId = null;
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+// 백틱 -> code 태그 (escape 후 적용)
+function mdline(s) {
+  return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+function openModal(id) {
+  modalItemId = id;
+  renderModal();
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal() {
+  modalItemId = null;
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+
+function renderModal() {
+  if (!modalItemId) return;
+  const i = getItems().find(x => x.id === modalItemId);
+  if (!i) { closeModal(); return; }
+
+  const badges = [];
+  badges.push(`<span class="badge st-${i.status}">${STATUS_LABEL[i.status]}</span>`);
+  badges.push(`<span class="badge st-todo">${i.priority}</span>`);
+  badges.push(`<span class="badge st-todo">${TRACK_LABEL[i.track]}</span>`);
+  badges.push(`<span class="badge st-todo">${SCOPE_LABEL[i.scope]}</span>`);
+  if (i.mismatch) badges.push(`<span class="badge mismatch" data-m-accept="${i.id}" title="클릭하면 SSOT 값(${STATUS_LABEL[i.seedStatus]})을 수용">SSOT 불일치 (SSOT: ${STATUS_LABEL[i.seedStatus]})</span>`);
+  if (i.custom) badges.push(`<span class="badge custom">직접 추가</span>`);
+
+  let detailHtml = '';
+  if (i.detail && i.detail.length) {
+    detailHtml = i.detail.map(d => {
+      const t = mdline(d.text).replace(/^([^:<]{1,20}:)/, '<span class="d-key">$1</span>');
+      return `<div class="d-line" style="margin-left:${d.lvl * 18}px">- ${t}</div>`;
+    }).join('');
+  } else if (i.custom && i.note) {
+    detailHtml = `<div class="d-line">${mdline(i.note)}</div>`;
+  } else {
+    detailHtml = '<div class="m-empty">세부사항 없음</div>';
+  }
+
+  const statusBtns = STATUSES.map(s =>
+    `<button class="m-status-btn${i.status === s ? ' active-' + s : ''}" data-m-status="${s}">${STATUS_LABEL[s]}</button>`
+  ).join('');
+
+  // 의존성: ID 패턴은 클릭 가능한 링크로
+  const ID_RE = /(MVP|EMP|CUSTOM)-(BE|FE)-\d+/g;
+  const all = getItems();
+  let depsHtml = '';
+  if (i.deps) {
+    const ids = i.deps.match(ID_RE) || [];
+    const rest = i.deps.replace(ID_RE, '').replace(/^[\s,·]+|[\s,·]+$/g, '');
+    depsHtml = ids.map(id => {
+      const t = all.find(x => x.id === id);
+      return `<span class="dep-link" data-m-open="${id}" title="${t ? esc(t.title) : '항목 없음'}">${id}${t ? ' [' + STATUS_LABEL[t.status] + ']' : ''}</span>`;
+    }).join('') + (rest ? `<span style="font-size:12px;color:var(--text-dim)"> ${esc(rest)}</span>` : '');
+  }
+  // 역의존성: 이 항목을 의존성으로 가진 항목들
+  const dependents = all.filter(x => x.deps && x.deps.includes(i.id));
+  const depByHtml = dependents.map(d =>
+    `<span class="dep-link" data-m-open="${d.id}" title="${esc(d.title)}">${d.id} [${STATUS_LABEL[d.status]}]</span>`
+  ).join('');
+
+  const memo = state.memos[i.id] || '';
+
+  const footer = [];
+  if (!i.custom) footer.push(`<button class="mini-btn" data-m-sync="${i.id}" title="이 항목의 실제 완료 여부를 검증하는 프롬프트를 복사. Claude Code에 붙여넣으면 코드/OpenAPI/evidence 기준으로 검증 후 SSOT 동기화 진행.">동기화 (검증 프롬프트 복사)</button>`);
+  if (!i.custom && state.overrides[i.id]) footer.push(`<button class="mini-btn" data-m-revert="${i.id}">시드 상태로 되돌리기</button>`);
+  if (i.custom) footer.push(`<button class="mini-btn del" data-m-del="${i.id}">이 항목 삭제</button>`);
+
+  document.getElementById('modalBody').innerHTML = `
+    <button class="modal-close" data-m-close>닫기 X</button>
+    <div class="m-id">${i.id}</div>
+    <div class="m-title">${mdline(i.title)}</div>
+    <div class="m-badges">${badges.join('')}</div>
+    <div class="m-section-label">상태 변경</div>
+    <div class="m-status-btns">${statusBtns}</div>
+    ${depsHtml ? `<div class="m-section-label">이 항목이 의존하는 것</div><div>${depsHtml}</div>` : ''}
+    ${depByHtml ? `<div class="m-section-label">이 항목에 의존하는 것</div><div>${depByHtml}</div>` : ''}
+    <div class="m-section-label">${i.custom ? '항목 메모' : 'SSOT 세부사항'}</div>
+    <div class="m-detail">${detailHtml}</div>
+    <div class="m-section-label">내 메모 (localStorage 저장, 재시드에도 유지)</div>
+    <textarea class="memo-area" id="memoArea" placeholder="이 항목에 대한 개인 메모...">${esc(memo)}</textarea>
+    <div style="margin-top:6px"><button class="mini-btn" data-m-memo-save="${i.id}">메모 저장</button></div>
+    ${footer.length ? `<div class="m-footer">${footer.join('')}</div>` : ''}
+  `;
+}
+
+// ----- 동기화: 검증 프롬프트 생성/복사 -----
+// 워크스페이스 루트 = 이 파일(dashboard/index.html) 위치에서 역산 - 절대경로 하드코딩 없음
+const WORKSPACE_PATH = decodeURIComponent(location.pathname).replace(/\/dashboard\/[^/]*$/, '');
+
+function buildSyncPrompt(i) {
+  const detailText = (i.detail || []).map(d => '  '.repeat(d.lvl) + '- ' + d.text).join('\n');
+  return `[WorKey 항목 동기화 검증 요청]
+
+먼저 ${WORKSPACE_PATH}/dashboard/SYNC-PROTOCOL.md 를 읽고, 그 절차와 판정 기준을 그대로 따라 아래 항목을 검증해줘.
+
+대상: ${i.id} - ${i.title}
+대시보드 로컬 상태: ${STATUS_LABEL[i.status]}
+SSOT 시드 상태: ${STATUS_LABEL[i.seedStatus]} (시드 기준: ${SEED.generatedAt})
+
+SSOT 세부사항 (완료 기준 포함):
+${detailText || '(없음)'}`;
+}
+
+function copyText(t) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(t);
+  }
+  // file:// 등 clipboard API 미지원 환경 fallback
+  const ta = document.createElement('textarea');
+  ta.value = t;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
+  return Promise.resolve();
+}
+
+function setStatus(id, status) {
+  const item = getItems().find(x => x.id === id);
+  if (item && item.status !== status) addLog(id, item.status, status);
+  const seedItem = SEED.items.find(s => s.id === id);
+  if (seedItem) {
+    const seedStatus = seedItem.done ? 'done' : 'todo';
+    if (status === seedStatus) {
+      delete state.overrides[id];
+    } else {
+      state.overrides[id] = { status, baseStatus: seedStatus, updatedAt: new Date().toISOString() };
+    }
+  } else {
+    const c = state.customs.find(x => x.id === id);
+    if (c) c.status = status;
+  }
+  saveState();
+  render();
+  renderModal();
+}
+
+document.getElementById('modalOverlay').addEventListener('click', e => {
+  if (e.target.id === 'modalOverlay' || e.target.closest('[data-m-close]')) { closeModal(); return; }
+  const open = e.target.closest('[data-m-open]');
+  if (open) { openModal(open.dataset.mOpen); return; }
+  const st = e.target.closest('[data-m-status]');
+  if (st) { setStatus(modalItemId, st.dataset.mStatus); return; }
+  const memoSave = e.target.closest('[data-m-memo-save]');
+  if (memoSave) {
+    const text = document.getElementById('memoArea').value.trim();
+    if (text) state.memos[memoSave.dataset.mMemoSave] = text;
+    else delete state.memos[memoSave.dataset.mMemoSave];
+    saveState(); render();
+    toast('메모 저장됨');
+    return;
+  }
+  const sync = e.target.closest('[data-m-sync]');
+  if (sync) {
+    const item = getItems().find(x => x.id === sync.dataset.mSync);
+    if (item) {
+      copyText(buildSyncPrompt(item))
+        .then(() => toast('검증 프롬프트 복사됨 - Claude Code에 붙여넣기'))
+        .catch(() => toast('복사 실패 - 브라우저 권한 확인'));
+    }
+    return;
+  }
+  const acc = e.target.closest('[data-m-accept]');
+  if (acc) { acceptSeed(acc.dataset.mAccept); renderModal(); return; }
+  const rev = e.target.closest('[data-m-revert]');
+  if (rev) { revertItem(rev.dataset.mRevert); renderModal(); return; }
+  const del = e.target.closest('[data-m-del]');
+  if (del && confirm(del.dataset.mDel + ' 항목을 삭제할까?')) { deleteCustom(del.dataset.mDel); closeModal(); return; }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+
+document.getElementById('btnAdd').addEventListener('click', () => {
+  document.getElementById('addForm').classList.toggle('open');
+});
+document.getElementById('btnCancelNew').addEventListener('click', () => {
+  document.getElementById('addForm').classList.remove('open');
+});
+document.getElementById('btnSaveNew').addEventListener('click', () => {
+  const title = document.getElementById('newTitle').value.trim();
+  if (!title) { toast('제목을 입력하세요'); return; }
+  addCustom(
+    document.getElementById('newTrack').value,
+    document.getElementById('newScope').value,
+    document.getElementById('newPrio').value,
+    title,
+    document.getElementById('newNote').value.trim()
+  );
+  document.getElementById('newTitle').value = '';
+  document.getElementById('newNote').value = '';
+  document.getElementById('addForm').classList.remove('open');
+});
+
+document.getElementById('btnExport').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), state }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'workey-dashboard-backup.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
+document.getElementById('fileImport').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data.state || typeof data.state.overrides !== 'object') throw new Error('형식 불일치');
+      state = data.state;
+      saveState(); render();
+      toast('가져오기 완료');
+    } catch (err) {
+      toast('가져오기 실패: ' + err.message);
+    }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+});
+
+document.getElementById('btnReseedHelp').addEventListener('click', () => {
+  alert('SSOT 재시드 방법:\n\n1. 터미널에서 실행:\n   python3 dashboard/generate_seed.py\n   (workey-workspace 루트에서)\n\n2. 이 페이지 새로고침\n\n새 항목은 자동 반영되고, 내가 바꾼 항목 중 SSOT와 다른 것엔 "SSOT 불일치" 뱃지가 표시됨.');
+});
+
+document.getElementById('searchBox').addEventListener('input', e => {
+  searchQuery = e.target.value.trim();
+  render();
+});
+
+document.getElementById('statusFilter').addEventListener('change', e => {
+  statusFilter = e.target.value;
+  render();
+});
+
+document.getElementById('btnLog').addEventListener('click', () => {
+  modalItemId = null;
+  let html;
+  if (!state.log.length) {
+    html = '<div class="m-empty">아직 변경 이력 없음. 상태를 바꾸면 여기에 기록됨.</div>';
+  } else {
+    html = '<div class="log-list">' + state.log.map(l => {
+      const t = l.at.slice(0, 16).replace('T', ' ');
+      return `<div><span class="log-time">${t}</span><span class="log-id" data-m-open="${l.id}">${l.id}</span> : ${STATUS_LABEL[l.from] || l.from} -&gt; ${STATUS_LABEL[l.to] || l.to}${l.sync ? ' <span style="color:var(--accent)">[동기화]</span>' : ''}</div>`;
+    }).join('') + '</div>';
+  }
+  document.getElementById('modalBody').innerHTML = `
+    <button class="modal-close" data-m-close>닫기 X</button>
+    <div class="m-title">상태 변경 이력 (최근 ${state.log.length}건, 최대 200건 보관)</div>
+    ${html}
+  `;
+  document.getElementById('modalOverlay').classList.add('open');
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  if (confirm('로컬 변경(상태 변경 + 직접 추가 항목 + 메모 + 이력)을 모두 삭제하고 시드 상태로 되돌릴까?')) {
+    state = { overrides: {}, customs: [], customSeq: 1, memos: {}, log: [], appliedSyncs: {} };
+    saveState(); render();
+    toast('초기화 완료');
+  }
+});
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// 탭 복귀 시 자동 새로고침 - 에이전트가 갱신한 SYNC 블록을 기존 탭에서 반영
+let lastLoadAt = Date.now();
+function safeReload() {
+  if (Date.now() - lastLoadAt < 5000) return;                                      // 로드 직후 연타 방지
+  if (document.getElementById('addForm').classList.contains('open')) return;       // 입력 중
+  if (searchQuery) return;                                                          // 검색 중
+  if (modalItemId) {
+    // 메모 입력 중이면 잃지 않게 reload 보류
+    const ta = document.getElementById('memoArea');
+    if (ta && ta.value.trim() !== (state.memos[modalItemId] || '')) return;
+    sessionStorage.setItem('workey-reopen-modal', modalItemId);                    // reload 후 같은 모달 복원
+  }
+  location.reload();
+}
+window.addEventListener('focus', safeReload);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') safeReload();
+});
+
+applySyncDirectives();
+render();
+
+// reload 전에 보던 모달 복원
+const reopenId = sessionStorage.getItem('workey-reopen-modal');
+if (reopenId) {
+  sessionStorage.removeItem('workey-reopen-modal');
+  openModal(reopenId);
+}
+</script>
+</body>
+</html>
